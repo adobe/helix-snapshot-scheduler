@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        worker: [publish-snapshot-queue, tenant-poll-queue]
+        worker: [publish-snapshot, tenant-poll]
 
     steps:
     - uses: actions/checkout@v4
