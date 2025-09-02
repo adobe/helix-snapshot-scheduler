@@ -14,3 +14,7 @@ binding = "PUBLISH_QUEUE"
 
 [[queues.consumers]]
 queue = "helix-snapshot-scheduler-tenant-poll"
+
+[[r2_buckets]]
+binding = 'R2_BUCKET'
+bucket_name = 'helix-snapshot-scheduler'
