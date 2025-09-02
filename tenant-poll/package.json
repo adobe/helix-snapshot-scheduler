@@ -1,0 +1,41 @@
+{
+  "name": "@adobe/helix-snapshot-scheduler-tenant-poll",
+  "version": "1.0.0",
+  "description": "Helix Snapshot Scheduler Tenant Poll Worker and Queue",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-test-coverage --test-reporter=spec --test-skip-pattern=Post-Deploy",
+    "test-postdeploy": "TEST_INTEGRATION=true node --test --test-reporter=spec --test-name-pattern=Post-Deploy",
+    "lint": "eslint .",
+    "semantic-release": "semantic-release",
+    "deploy": "wrangler deploy",
+    "deploy-ci": "wrangler deploy --config wrangler-ci.toml",
+    "dev": "wrangler dev --remote"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/tenant-poll"
+  },
+  "author": "Adobe",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/tenant-poll/issues"
+  },
+  "homepage": "https://github.com/adobe/helix-snapshot-scheduler/tenant-poll#readme",
+  "devDependencies": {
+    "@adobe/eslint-config-helix": "2.0.8",
+    "@adobe/semantic-release-coralogix": "1.1.32",
+    "@semantic-release/changelog": "6.0.3",
+    "@semantic-release/exec": "6.0.3",
+    "@semantic-release/git": "10.0.1",
+    "c8": "10.1.3",
+    "eslint": "8.57.1",
+    "mocha": "10.8.2",
+    "semantic-release": "24.2.0",
+    "semantic-release-slack-bot": "4.0.2",
+		"wrangler": "4.33.0"
+	},
+	"dependencies": {
+	}
+}
