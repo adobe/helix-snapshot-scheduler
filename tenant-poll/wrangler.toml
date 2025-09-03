@@ -4,6 +4,9 @@ name = "helix-snapshot-scheduler-tenant-poll-prod"
 main = "src/index.js"
 compatibility_date = "2023-05-05"
 
+[triggers]
+crons = ["*/10 * * * *"]
+
 [[queues.producers]]
 queue = "helix-snapshot-scheduler-tenant-poll"
 binding = "TENANT_POLL_QUEUE"
