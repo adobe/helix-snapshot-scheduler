@@ -28,9 +28,10 @@ async function addTenantsToQueue(env) {
     } else {
       console.log(`found ${tenants.length} tenants`);
     }
-    tenants.filter((tenant) => tenant.split('--').length === 2).forEach(async (tenant) => {
-      const [org, site] = tenant.split('--');
-      if (!org || !site) return;
+    tenants.forEach(async (tenant) => {
+      const [org, site] = tenant.replace('.json', '').replace('registered/', '').split('--');
+      if (!org || !site) throw new Error(`Invalid tenant name: ${tenant}`);
+      console.log(`org: ${org}, site: ${site}`);
       console.log(`adding tenant ${org}/${site} to queue...`);
       const result = await env.TENANT_POLL_QUEUE.send({ org, site });
       console.log(`tenant ${org}/${site} added to queue: ${result}`);
