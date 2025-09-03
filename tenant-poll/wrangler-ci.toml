@@ -18,6 +18,7 @@ queue = "helix-snapshot-scheduler-tenant-poll-ci"
 [[r2_buckets]]
 binding = 'R2_BUCKET'
 bucket_name = 'helix-snapshot-scheduler-ci'
+preview_bucket_name = 'helix-snapshot-scheduler-ci'
 
 [observability]
 enabled = true

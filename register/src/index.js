@@ -20,12 +20,12 @@
 async function registerRequest(env, org, site) {
   try {
     // first check if the folder already exists
-    const folder = await env.R2_BUCKET.get(`registered/${org}--${site}`);
+    const folder = await env.R2_BUCKET.get(`registered/${org}--${site}.json`);
     if (folder) {
       console.debug('Register Request: ', org, site, 'Folder already exists');
       return 'Folder already exists';
     }
-    await env.R2_BUCKET.put(`registered/${org}--${site}`, `{ "org": "${org}", "site": "${site}" }`);
+    await env.R2_BUCKET.put(`registered/${org}--${site}.json`, `{ "org": "${org}", "site": "${site}" }`);
     return 'Folder created';
   } catch (err) {
     console.error('Register Request failed: ', org, site, err);

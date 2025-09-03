@@ -18,26 +18,37 @@ const LOOKAHEAD_SEC = 600; // 10 minutes
 
 async function addTenantsToQueue(env) {
   try {
-    console.debug('polling tenants');
+    console.log('polling tenants');
     // get all registered tenants from R2 bucket
     const tenants = await listFromR2(env, 'registered/');
-    console.debug(`tenants: ${tenants}`);
-    tenants.filter((tenant) => tenant.key.split('--').length === 2).forEach(async (tenant) => {
-      const [org, site] = tenant.key.split('--');
+    console.log(`tenants: ${JSON.stringify(tenants)}`);
+    if (tenants && tenants.length === 0) {
+      console.log('No tenants found');
+      return 'No tenants found';
+    } else {
+      console.log(`found ${tenants.length} tenants`);
+    }
+    tenants.filter((tenant) => tenant.split('--').length === 2).forEach(async (tenant) => {
+      const [org, site] = tenant.split('--');
       if (!org || !site) return;
-      await env.TENANT_POLL_QUEUE.send({ org, site });
+      console.log(`adding tenant ${org}/${site} to queue...`);
+      const result = await env.TENANT_POLL_QUEUE.send({ org, site });
+      console.log(`tenant ${org}/${site} added to queue: ${result}`);
     });
+    return 'All tenants added to queue';
   } catch (error) {
     console.error(`error adding tenants to queue: ${error}`);
+    return `error adding tenants to queue: ${error}`;
   }
 }
 
 export default {
   async scheduled(controller, env, ctx) {
     // add registered tenants to the queue
-    return addTenantsToQueue(env, ctx);
+    await addTenantsToQueue(env, ctx);
   },
   async queue(batch, env) {
+    console.log('Tenant Poll Worker queue: Processing batch', batch.messages);
     // get scheduled publish times from snapshots for each tenant
     for (const msg of batch.messages) {
       const { org, site } = msg.body;

@@ -25,25 +25,19 @@ export async function listFromR2(env, prefix) {
   try {
     const bucket = env.R2_BUCKET; // R2 bucket containing tenants
     const items = [];
-
+    console.log(`listing items from R2: ${prefix}`);
     let cursor;
     do {
       const listRes = await bucket.list({ cursor, prefix });
-      for (const obj of listRes.objects) {
-        const data = await bucket.get(obj.key);
-        if (data) {
-          const text = await data.text();
-          const tenant = JSON.parse(text); // { tenant_id, org_id, site_id, lookahead_sec }
-          items.push(tenant);
-        } else {
-          console.error(`error getting item from R2: ${obj.key}`);
-        }
-      }
+      console.log(`listing items from R2: ${prefix}`, JSON.stringify(listRes.objects));
+      listRes.objects.forEach((obj) => {
+        items.push(obj.key.split('.')[0]);
+      });
       cursor = listRes.truncated ? listRes.cursor : undefined;
     } while (cursor);
     return items;
   } catch (error) {
-    console.error(`error getting items from R2: ${error}`);
+    console.log(`error getting items from R2: ${error}`);
     return [];
   }
 }
