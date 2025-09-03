@@ -7,3 +7,6 @@ compatibility_date = "2023-05-05"
 [[r2_buckets]]
 binding = 'R2_BUCKET'
 bucket_name = 'helix-snapshot-scheduler-ci'
+
+[observability]
+enabled = true

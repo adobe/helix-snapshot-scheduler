@@ -6,3 +6,6 @@ compatibility_date = "2023-05-05"
 
 [[queues.consumers]]
 queue = "helix-snapshot-scheduler-publish-ci"
+
+[observability]
+enabled = true
