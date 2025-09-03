@@ -11,6 +11,7 @@
  */
 /* eslint-disable no-console */
 /* eslint-disable no-await-in-loop */
+/* eslint-disable no-unused-vars */
 
 import { listFromR2, getSnapshotsList, processSnapshotList } from './utils.js';
 
@@ -21,32 +22,43 @@ async function addTenantsToQueue(env) {
     console.log('polling tenants');
     // get all registered tenants from R2 bucket
     const tenants = await listFromR2(env, 'registered/');
-    console.log(`tenants: ${JSON.stringify(tenants)}`);
+    // console.log(`tenants: ${JSON.stringify(tenants)}`);
     if (tenants && tenants.length === 0) {
       console.log('No tenants found');
-      return 'No tenants found';
+      return 0;
     } else {
       console.log(`found ${tenants.length} tenants`);
     }
-    tenants.forEach(async (tenant) => {
+    for (const tenant of tenants) {
       const [org, site] = tenant.replace('.json', '').replace('registered/', '').split('--');
-      if (!org || !site) throw new Error(`Invalid tenant name: ${tenant}`);
-      console.log(`org: ${org}, site: ${site}`);
-      console.log(`adding tenant ${org}/${site} to queue...`);
-      const result = await env.TENANT_POLL_QUEUE.send({ org, site });
-      console.log(`tenant ${org}/${site} added to queue: ${result}`);
-    });
-    return 'All tenants added to queue';
+      if (!org || !site) {
+        throw new Error(`Invalid tenant name: ${tenant}`);
+      }
+      // console.log(`org: ${org}, site: ${site}`);
+      // console.log(`adding tenant ${org}/${site} to queue...`);
+      const tenantData = { org, site };
+      await env.TENANT_POLL_QUEUE.send(tenantData);
+      console.log(`tenant ${org}/${site} added to queue successfully`);
+    }
+    console.log('All tenants added to queue');
+    return tenants.length;
   } catch (error) {
     console.error(`error adding tenants to queue: ${error}`);
-    return `error adding tenants to queue: ${error}`;
+    throw error;
   }
 }
 
 export default {
   async scheduled(controller, env, ctx) {
-    // add registered tenants to the queue
-    await addTenantsToQueue(env, ctx);
+    try {
+      // add registered tenants to the queue
+      const numTenants = await addTenantsToQueue(env);
+      console.log(`number of tenants added to queue: ${numTenants}`);
+      return true;
+    } catch (error) {
+      console.error(`error adding tenants to queue: ${error}`);
+      return false;
+    }
   },
   async queue(batch, env) {
     console.log('Tenant Poll Worker queue: Processing batch', batch.messages);
