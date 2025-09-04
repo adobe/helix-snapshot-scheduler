@@ -25,7 +25,7 @@ jobs:
     - name: Semantic Release for ${{ matrix.worker }}
       run: cd ${{ matrix.worker }} && npm run semantic-release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         CORALOGIX_TAGGER_API_KEY: ${{ secrets.CORALOGIX_TAGGER_API_KEY }}
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         # Deployment variables
