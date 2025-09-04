@@ -12,12 +12,13 @@
 /* eslint-disable no-console */
 /* eslint-disable no-await-in-loop */
 
-const ADMIN_API_BASE = 'https://admin.adobe.io';
+const ADMIN_API_BASE = 'https://admin.hlx.page';
 const MAIN_BRANCH = 'main';
 
-async function publishSnapshot(env, org, site, snapshot, manifest, messageBody) {
+async function publishSnapshot(env, org, site, snapshot, publishAt, manifest, messageBody) {
   try {
     // Publish the snapshot
+    console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshot, publishAt, manifest);
     const publishResponse = await fetch(
       `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshot}?publish=true`,
       {
@@ -31,8 +32,8 @@ async function publishSnapshot(env, org, site, snapshot, manifest, messageBody) 
         }),
       },
     ).then((res) => res.json());
-    console.debug(publishResponse);
-    console.info(`Successfully published snapshot ${snapshot}`);
+    console.log(publishResponse);
+    console.log(`Successfully published snapshot ${snapshot}`);
   } catch (error) {
     console.error(`Failed to publish snapshot ${snapshot}:`, error.message);
     // if publish fails, requeue the message with a delay
@@ -40,7 +41,7 @@ async function publishSnapshot(env, org, site, snapshot, manifest, messageBody) 
   }
   // Update the manifest to remove scheduledPublish property and mark as published
 
-  console.info(`Updating manifest for snapshot ${manifest.id}...`);
+  console.log(`Updating manifest for snapshot ${manifest.id}...`);
 
   // Create updated manifest without scheduledPublish and with published metadata
   const updatedManifest = {
@@ -49,13 +50,13 @@ async function publishSnapshot(env, org, site, snapshot, manifest, messageBody) 
     locked: manifest.locked || false,
     metadata: {
       ...manifest.metadata,
-      publishedAt: new Date().toISOString(),
+      publishedAt: new Date(publishAt).toISOString(),
       publishedBy: 'scheduled-snapshot-publisher',
       status: 'published',
     },
   };
   delete updatedManifest.metadata.scheduledPublish;
-  console.debug(updatedManifest);
+  console.log(updatedManifest);
   try {
     // Update the snapshot manifest
     await fetch(
@@ -70,7 +71,7 @@ async function publishSnapshot(env, org, site, snapshot, manifest, messageBody) 
       },
     ).then((res) => res.json());
 
-    console.info(`Successfully updated manifest for snapshot ${snapshot}`);
+    console.log(`Successfully updated manifest for snapshot ${snapshot}`);
   } catch (manifestError) {
     console.error(`Failed to update manifest for snapshot ${snapshot}:`, manifestError.message);
     // Don't fail the entire process if manifest update fails
@@ -82,14 +83,16 @@ export default {
   async queue(batch, env) {
     // publish
     for (const msg of batch.messages) {
+      console.log('Publish Snapshot Worker: publishing snapshot', msg.body);
       const {
         org,
         site,
         snapshot,
+        publishAt,
         manifest,
       } = msg.body;
       try {
-        await publishSnapshot(env, org, site, snapshot, manifest, msg.body);
+        await publishSnapshot(env, org, site, snapshot, publishAt, manifest, msg.body);
       } catch (err) {
         console.error('Publish Snapshot Worker failed: ', org, site, snapshot, err);
         // Don't fail the entire process if publish fails

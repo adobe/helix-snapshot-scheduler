@@ -82,7 +82,7 @@ export async function getSnapshotsList(env, org, site) {
  */
 export async function processSnapshotList(env, org, site, snapshotsList, lookAheadMs) {
   const publishSnapshotList = [];
-
+  console.log('processing snapshot list', org, site, snapshotsList);
   for (const snapshot of snapshotsList) {
     try {
       const manifestResponse = await fetch(
@@ -100,11 +100,13 @@ export async function processSnapshotList(env, org, site, snapshotsList, lookAhe
           && manifestResponse.manifest.metadata.scheduledPublish
           && manifestResponse.manifest.resources.length > 0
       ) {
+        console.log('snapshot is scheduled to be published', org, site, manifestResponse.manifest);
         const scheduledPublish = new Date(
           manifestResponse.manifest.metadata.scheduledPublish,
         ).getTime();
         const now = Date.now();
         if (scheduledPublish >= now && scheduledPublish <= (now + lookAheadMs)) {
+          delete manifestResponse.manifest.resources; // strip resources to save space
           publishSnapshotList.push({
             org,
             site,

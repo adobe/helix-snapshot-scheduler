@@ -85,12 +85,15 @@ export default {
             snapshots,
             LOOKAHEAD_SEC * 1000,
           );
+          console.log('publishSnapshotList', publishSnapshotList);
           if (publishSnapshotList.length > 0) {
             for (const snapshot of publishSnapshotList) {
+              console.log('sending snapshot to publish queue', snapshot);
               await env.PUBLISH_QUEUE.send(
                 snapshot,
                 { delaySeconds: Math.ceil((snapshot.publishAt - Date.now()) / 1000) || 0 },
               );
+              console.log('snapshot sent to publish queue', snapshot);
             }
           }
         } catch (err) {
