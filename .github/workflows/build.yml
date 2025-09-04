@@ -20,7 +20,7 @@ jobs:
     - name: Install dependencies for ${{ matrix.worker }}
       run: cd ${{ matrix.worker }} && npm ci
     - name: Lint ${{ matrix.worker }}
-      run: cd ${{ matrix.worker }} && npm run lint || echo "Linting temporarily disabled - will be enforced in separate PR"
+      run: cd ${{ matrix.worker }} && npm run lint
     - name: Unit Test ${{ matrix.worker }}
       run: cd ${{ matrix.worker }} && npm run test || echo "No tests configured yet"
 
@@ -28,7 +28,7 @@ jobs:
     - name: Deploy ${{ matrix.worker }} to CI
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_KEY }}
-      run: cd ${{ matrix.worker }} && npm run deploy-ci || echo "Deployment skipped - CF_API_KEY not configured"
+      run: cd ${{ matrix.worker }} && npm run deploy-ci
     
     # Wait for deployment to propagate
     - name: Wait for ${{ matrix.worker }} service update
