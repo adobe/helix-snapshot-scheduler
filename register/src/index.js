@@ -11,6 +11,23 @@
  */
 /* eslint-disable no-console */
 
+async function isAuthorized(authToken, org, site) {
+  // check if the authToken can make a call to the AEM Admin API
+  const aemAdminApiUrl = `https://admin.hlx.page/config/${org}/sites/${site}.json`;
+  const aemAdminApiResponse = await fetch(aemAdminApiUrl, {
+    method: 'GET',
+    headers: {
+      Authorization: `${authToken}`,
+      Accept: 'application/json',
+    },
+  });
+  if (!aemAdminApiResponse.ok) {
+    console.debug('Could not make a call to the AEM Admin API', aemAdminApiResponse.status, aemAdminApiResponse.statusText);
+    return false;
+  }
+  return true;
+}
+
 /**
  * Register the incoming request by creating a folder in the R2 bucket
  * @param {Object} env - The environment object
@@ -54,6 +71,14 @@ export default {
         return new Response('Invalid body. Please provide org and site', { status: 400 });
       }
       try {
+        const authToken = request.headers.get('Authorization');
+        if (!authToken) {
+          return new Response('Unauthorized', { status: 401 });
+        }
+        const authorized = await isAuthorized(authToken, org, site);
+        if (!authorized) {
+          return new Response('Unauthorized', { status: 401 });
+        }
         const result = await registerRequest(env, org, site);
         if (result === 'Folder already exists') {
           return new Response('This org/site has already been registered', { status: 200 });
