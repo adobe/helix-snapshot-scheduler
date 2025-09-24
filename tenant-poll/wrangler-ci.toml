@@ -7,7 +7,7 @@ compatibility_date = "2023-05-05"
 # just for testing/debugging currently.
 # will turn off once the whole thing is stable
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["0 */12 * * *"]
 
 [[queues.producers]]
 queue = "helix-snapshot-scheduler-tenant-poll-ci"
