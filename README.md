@@ -1,6 +1,6 @@
 # Helix Snapshot Scheduler
 
-A Cloudflare Workers-based system for scheduling and publishing AEM Edge Delivery snapshots automatically.
+A Cloudflare Workers-based system for scheduling and publishing AEM Edge Delivery snapshots automatically
 
 ## Overview
 
