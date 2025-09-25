@@ -6,24 +6,88 @@ A Cloudflare Workers-based system for scheduling and publishing AEM Edge Deliver
 
 This system consists of three main components that work together to manage scheduled snapshot publishing:
 
-1. **Register** - Registers org/site combinations for snapshot scheduling
-2. **Tenant Poll** - Monitors registered tenants and queues snapshots for publishing
+1. **Register** - Registers org/site combinations for snapshot scheduling and manages schedule data
+2. **Tenant Poll** - Monitors snapshots for publishing
 3. **Publish Snapshot** - Publishes snapshots and updates manifests
 
-## How to Register
+## Register Service
+
+The register service handles both registration and schedule management for org/site combinations.
+
+### Registration
 
 To register an org/site combination for snapshot scheduling:
 
 ```bash
-curl -X POST https://helix-snapshot-scheduler-register-ci.adobeaem.workers.dev/register \
+curl -X POST https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
   -d '{"org": "your-org", "site": "your-site"}'
 ```
 
 **Response:**
 - `200 OK` - Registration successful or already registered
 - `400 Bad Request` - Missing org or site in request body
-- `405 Method Not Allowed` - Only POST requests are accepted
+- `401 Unauthorized` - Invalid or missing authorization token
+
+### Schedule Management
+
+#### Update Schedule
+
+To schedule a snapshot for publishing at a specific time:
+
+```bash
+curl -X POST https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/schedule \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{
+    "org": "your-org",
+    "site": "your-site",
+    "snapshotId": "snapshot-123",
+    "scheduledPublish": "2025-01-15T10:30:00Z"
+  }'
+```
+
+**Response:**
+- `200 OK` - Schedule updated successfully
+- `400 Bad Request` - Missing required fields or invalid date format
+- `401 Unauthorized` - Invalid or missing authorization token
+- `404 Not Found` - Org/site not registered for scheduled publishing
+
+#### Get Schedule
+
+To retrieve schedule data for a specific org/site:
+
+```bash
+curl -X GET https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/schedule/your-org/your-site \
+  -H "Authorization: Bearer <your-token>"
+```
+
+**Response:**
+```json
+{
+  "your-org--your-site": {
+    "snapshot-123": "2025-01-15T10:30:00Z",
+    "snapshot-456": "2025-01-16T14:00:00Z"
+  }
+}
+```
+
+#### Check Registration Status
+
+To check if an org/site is registered:
+
+```bash
+curl -X GET https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register/your-org/your-site \
+  -H "Authorization: Bearer <your-token>"
+```
+
+**Response:**
+```json
+{
+  "registered": true
+}
+```
 
 ## How it works in the background
 
@@ -55,6 +119,25 @@ When the publish-queue processes a snapshot:
   - `status`: Set to 'published'
 - **Handles failures**: Retries failed publications with delay
 
+## Schedule Data Storage
+
+The register service stores schedule data in R2 bucket as `schedule.json` with the following structure:
+
+```json
+{
+  "org1--site1": {
+    "snapshotId1": "2025-01-15T10:30:00Z",
+    "snapshotId2": "2025-01-16T14:00:00Z"
+  },
+  "org1--site2": {
+    "snapshotId1": "2025-01-17T09:15:00Z"
+  },
+  "org2--site1": {
+    "snapshotId1": "2025-01-18T16:45:00Z"
+  }
+}
+```
+
 ## Architecture
 
 ```
@@ -62,8 +145,10 @@ When the publish-queue processes a snapshot:
 │   Register  │    │ Tenant Poll  │    │ Publish Snapshot│
 │             │    │              │    │                 │
 │ POST /register│  │ Cron Trigger │    │ Queue Processor │
-│ Creates R2  │    │ → tenant-    │    │ → publish-queue │
-│ entries     │    │   poll-queue │    │ → Admin API     │
+│ POST /schedule│  │ → tenant-    │    │ → publish-queue │
+│ GET /schedule │  │   poll-queue │    │ → Admin API     │
+│ Creates R2  │    │              │    │                 │
+│ entries     │    │              │    │                 │
 └─────────────┘    └──────────────┘    └─────────────────┘
        │                   │                      │
        │                   │                      │
@@ -73,14 +158,25 @@ When the publish-queue processes a snapshot:
 │ registered/ │    │ GET snapshots│    │   manifest      │
 │ org--site   │    │ GET manifest │    │   -Update       │
 │ .json files │    │ -> Publish Q │    │   metadata      │
+│ schedule.json│   │              │    │                 │
 └─────────────┘    └──────────────┘    └─────────────────┘
 ```
 
 ## Environment Variables
-- `ADMIN_API_TOKEN`: Token for authenticating with the AEM admin API
-- `R2_BUCKET`: Cloudflare R2 bucket for storing registered tenants (via wrangler.toml)
+- `R2_BUCKET`: Cloudflare R2 bucket for storing registered tenants and schedule data (via wrangler.toml)
 - `TENANT_POLL_QUEUE`: Cloudflare Queue for tenant processing (via wrangler.toml)
 - `PUBLISH_QUEUE`: Cloudflare Queue for snapshot publishing (via wrangler.toml)
+
+## Authorization
+
+All register service endpoints require proper authorization:
+
+- **Admin access** (for registration): Requires access to AEM Admin API site configuration
+- **Basic author access** (for scheduling): Requires access to AEM Snapshot List API
+
+The service validates authorization by making test calls to:
+- `https://admin.hlx.page/config/{org}/sites/{site}.json` (for admin access)
+- `https://admin.hlx.page/snapshot/{org}/{site}/main` (for snapshot access)
 
 ## Deployment
 
