@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        worker: [publish-snapshot, tenant-poll, register]
+        worker: [publish, cron, register]
     steps:
       - uses: actions/checkout@v4
       - name: Check conventional commits for ${{ matrix.worker }}
