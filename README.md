@@ -8,7 +8,7 @@ This system consists of three main components that work together to manage sched
 
 1. **Register** - Registers org/site combinations for snapshot scheduling and manages schedule data
 2. **Cron** - Monitors schedule data and queues snapshots for publishing
-3. **Publish Snapshot** - Publishes snapshots and updates manifests
+3. **Publish** - Publishes snapshots and manages completion tracking
 
 ## Register Service
 
@@ -99,18 +99,18 @@ The cron worker runs every 5 minutes and performs the following:
 - **Filters by timing**: Identifies snapshots scheduled for publishing in the next 5 minutes
 - **Queues for publishing**: Adds eligible snapshots to the `publish-queue` with exact delay timing
 
-### 2. Publish Snapshot
+### 2. Publish Worker
 
 When the publish-queue processes a snapshot:
 
-- **Publishes snapshot**: Calls the admin API to publish the snapshot
-- **Updates manifest**: Removes the `scheduledPublish` metadata and adds:
-  - `publishedAt`: Timestamp of publication
-  - `publishedBy`: Set to 'scheduled-snapshot-publisher'
-  - `status`: Set to 'published'
-- **Handles failures**: Retries failed publications with delay
+- **Publishes snapshot**: Calls the AEM Admin API to publish the snapshot
+- **Updates schedule**: Removes the published snapshot from `schedule.json` to prevent duplicate publishing
+- **Tracks completion**: Moves completed snapshot data to `completed/YYYY-MM-DD.json` for audit trail
+- **Handles failures**: If publishing fails, the snapshot remains in `schedule.json` for retry by the cron job
 
-## Schedule Data Storage
+## Data Storage
+
+### Schedule Data (`schedule.json`)
 
 The register service stores schedule data in R2 bucket as `schedule.json` with the following structure:
 
@@ -129,11 +129,28 @@ The register service stores schedule data in R2 bucket as `schedule.json` with t
 }
 ```
 
+### Completed Snapshots (`completed/YYYY-MM-DD.json`)
+
+The publish worker tracks completed snapshots in date-based JSON files:
+
+```json
+[
+  {
+    "org": "org1",
+    "site": "site1",
+    "snapshotId": "snapshot-123",
+    "scheduledPublish": "2025-01-15T10:30:00Z",
+    "publishedAt": "2025-01-15T10:30:15Z",
+    "publishedBy": "scheduled-snapshot-publisher"
+  }
+]
+```
+
 ## Architecture
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   Register  │    │     Cron     │    │ Publish Snapshot│
+│   Register  │    │     Cron     │    │     Publish     │
 │             │    │              │    │                 │
 │ POST /register│  │ Cron Trigger │    │ Queue Processor │
 │ POST /schedule│  │ → schedule   │    │ → publish-queue │
@@ -146,10 +163,10 @@ The register service stores schedule data in R2 bucket as `schedule.json` with t
        ▼                   ▼                      ▼
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
 │   R2 Bucket │    │ schedule.json│    │   -Update       │
-│ registered/ │    │ GET schedule │    │   manifest      │
-│ org--site   │    │ GET manifest │    │   -Update       │
-│ .json files │    │ -> Publish Q │    │   metadata      │
-│ schedule.json│   │              │    │                 │
+│ registered/ │    │ GET schedule │    │   schedule.json │
+│ org--site   │    │ -> Publish Q │    │   -Move to      │
+│ .json files │    │              │    │   completed/    │
+│ schedule.json│   │              │    │   YYYY-MM-DD    │
 └─────────────┘    └──────────────┘    └─────────────────┘
 ```
 
@@ -174,14 +191,23 @@ Each component is deployed as a separate Cloudflare Worker automatically via Git
 
 - `register/` - HTTP endpoint for registration
 - `cron/` - Scheduled worker that reads schedule data and queues snapshots
-- `publish-snapshot/` - Queue worker for publishing
+- `publish/` - Queue worker for publishing
 
 See individual `wrangler.toml` files for deployment configuration.
 
-## TODO
-Edge cases to test:
-- lookahead time needs to be longer than the cron frequency
-- What if someone changes the scheduled publish time after the job is already added to the publish queue (need a final check before running it)
+## Key Features
 
-- if lookahead is higher than cron frequency, then we might publish same snapshot multiple times. is this a problem? can we avoid storing state in R2 for jobs that are done
-- Do we need to log the completed publishes in R2 for historical purposes? It shows in audit log as a system generated thing as well as in snapshot metadata.
+### Simplified Architecture
+- **Centralized Schedule Management**: All scheduled snapshots are stored in a single `schedule.json` file
+- **No Duplicate Publishing**: Published snapshots are immediately removed from the schedule to prevent re-publishing
+- **Audit Trail**: Completed snapshots are tracked in date-based JSON files for historical purposes
+- **Fault Tolerance**: Failed publishes remain in the schedule for automatic retry by the cron job
+
+### Data Flow
+1. **Registration**: Org/site combinations are registered for scheduled publishing
+2. **Scheduling**: Snapshots are scheduled with specific publish times via API
+3. **Monitoring**: Cron job monitors schedule every 5 minutes for upcoming publishes
+4. **Publishing**: Queue worker publishes snapshots at the exact scheduled time
+5. **Cleanup**: Published snapshots are removed from schedule and archived
+
+## TODO

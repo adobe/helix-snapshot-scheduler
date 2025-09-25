@@ -1,7 +1,7 @@
 {
-  "name": "@adobe/helix-snapshot-scheduler-snapshot-publish",
+  "name": "@adobe/helix-snapshot-scheduler-publish",
   "version": "1.0.0",
-  "description": "Helix Snapshot Scheduler Snapshot Publish worker and queue",
+  "description": "Helix Snapshot Scheduler Snapshot Publish Queue Worker",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -15,14 +15,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/snapshot-publish"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/publish"
   },
   "author": "Adobe",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/snapshot-publish/issues"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/publish/issues"
   },
-  "homepage": "https://github.com/adobe/helix-snapshot-scheduler/snapshot-publish#readme",
+  "homepage": "https://github.com/adobe/helix-snapshot-scheduler/publish#readme",
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.8",
     "@adobe/semantic-release-coralogix": "1.1.32",

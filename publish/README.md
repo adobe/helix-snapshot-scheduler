@@ -1,4 +1,4 @@
-# Helix Snapshot Scheduler Snapshot Publish worker and queue
+# Helix Snapshot Scheduler Snapshot Publish Queue worker
 
 ## Description
 Install the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) and run `wrangler dev --remote` or `npx wrangler dev --remote` to start a local instance.
