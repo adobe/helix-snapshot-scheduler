@@ -1,4 +1,4 @@
-# Helix Snapshot Scheduler Tenant Poll Worker and Queue
+# Helix Snapshot Scheduler Cron job
 
 ## Description
 Install the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) and run `wrangler dev --remote` or `npx wrangler dev --remote` to start a local instance.

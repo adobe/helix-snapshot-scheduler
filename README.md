@@ -7,7 +7,7 @@ A Cloudflare Workers-based system for scheduling and publishing AEM Edge Deliver
 This system consists of three main components that work together to manage scheduled snapshot publishing:
 
 1. **Register** - Registers org/site combinations for snapshot scheduling and manages schedule data
-2. **Tenant Poll** - Monitors snapshots for publishing
+2. **Cron** - Monitors schedule data and queues snapshots for publishing
 3. **Publish Snapshot** - Publishes snapshots and updates manifests
 
 ## Register Service
@@ -91,24 +91,15 @@ curl -X GET https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register/yo
 
 ## How it works in the background
 
-### 1. Tenant Poll Scheduler
+### 1. Cron Scheduler
 
-The tenant-poll worker runs on a cron schedule (currently 10 mins) and performs the following:
+The cron worker runs every 5 minutes and performs the following:
 
-- **Scans registered tenants**: Looks up all registered org/site combinations from the R2 bucket
-- **Queues tenant processing**: Adds each registered tenant to the `tenant-poll-queue` for processing
-- **Handles failures**: Retries failed operations with exponential backoff
+- **Reads schedule data**: Loads the centralized `schedule.json` from R2 bucket
+- **Filters by timing**: Identifies snapshots scheduled for publishing in the next 5 minutes
+- **Queues for publishing**: Adds eligible snapshots to the `publish-queue` with exact delay timing
 
-### 2. Tenant Poll Processing
-
-When the tenant-poll-queue processes a tenant:
-
-- **Fetches snapshots**: Calls the snapshot API to get all snapshots for the org/site
-- **Checks scheduling**: Examines each snapshot's manifest for `scheduledPublish` metadata
-- **Filters by timing**: Only processes snapshots scheduled within the next 10 minutes
-- **Queues for publishing**: Adds eligible snapshots to the `publish-queue` with appropriate delay
-
-### 3. Publish Snapshot
+### 2. Publish Snapshot
 
 When the publish-queue processes a snapshot:
 
@@ -142,11 +133,11 @@ The register service stores schedule data in R2 bucket as `schedule.json` with t
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   Register  │    │ Tenant Poll  │    │ Publish Snapshot│
+│   Register  │    │     Cron     │    │ Publish Snapshot│
 │             │    │              │    │                 │
 │ POST /register│  │ Cron Trigger │    │ Queue Processor │
-│ POST /schedule│  │ → tenant-    │    │ → publish-queue │
-│ GET /schedule │  │   poll-queue │    │ → Admin API     │
+│ POST /schedule│  │ → schedule   │    │ → publish-queue │
+│ GET /schedule │  │   data       │    │ → Admin API     │
 │ Creates R2  │    │              │    │                 │
 │ entries     │    │              │    │                 │
 └─────────────┘    └──────────────┘    └─────────────────┘
@@ -154,8 +145,8 @@ The register service stores schedule data in R2 bucket as `schedule.json` with t
        │                   │                      │
        ▼                   ▼                      ▼
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   R2 Bucket │    │ Snapshot API │    │   -Update       │
-│ registered/ │    │ GET snapshots│    │   manifest      │
+│   R2 Bucket │    │ schedule.json│    │   -Update       │
+│ registered/ │    │ GET schedule │    │   manifest      │
 │ org--site   │    │ GET manifest │    │   -Update       │
 │ .json files │    │ -> Publish Q │    │   metadata      │
 │ schedule.json│   │              │    │                 │
@@ -164,7 +155,6 @@ The register service stores schedule data in R2 bucket as `schedule.json` with t
 
 ## Environment Variables
 - `R2_BUCKET`: Cloudflare R2 bucket for storing registered tenants and schedule data (via wrangler.toml)
-- `TENANT_POLL_QUEUE`: Cloudflare Queue for tenant processing (via wrangler.toml)
 - `PUBLISH_QUEUE`: Cloudflare Queue for snapshot publishing (via wrangler.toml)
 
 ## Authorization
@@ -183,7 +173,7 @@ The service validates authorization by making test calls to:
 Each component is deployed as a separate Cloudflare Worker automatically via Github workflows
 
 - `register/` - HTTP endpoint for registration
-- `tenant-poll/` - Scheduled worker with queue processing
+- `cron/` - Scheduled worker that reads schedule data and queues snapshots
 - `publish-snapshot/` - Queue worker for publishing
 
 See individual `wrangler.toml` files for deployment configuration.

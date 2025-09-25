@@ -1,7 +1,7 @@
 {
-  "name": "@adobe/helix-snapshot-scheduler-tenant-poll",
+  "name": "@adobe/helix-snapshot-scheduler-cron",
   "version": "1.0.0",
-  "description": "Helix Snapshot Scheduler Tenant Poll Worker and Queue",
+  "description": "Helix Snapshot Scheduler Cron Worker",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -15,14 +15,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/tenant-poll"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/cron"
   },
   "author": "Adobe",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/tenant-poll/issues"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/cron/issues"
   },
-  "homepage": "https://github.com/adobe/helix-snapshot-scheduler/tenant-poll#readme",
+  "homepage": "https://github.com/adobe/helix-snapshot-scheduler/cron#readme",
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.8",
     "@adobe/semantic-release-coralogix": "1.1.32",

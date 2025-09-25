@@ -1,24 +1,15 @@
 # Top-level configuration
 account_id = "852dfa4ae1b0d579df29be65b986c101"
-name = "helix-snapshot-scheduler-tenant-poll-ci"
+name = "helix-snapshot-scheduler-cron-ci"
 main = "src/index.js"
 compatibility_date = "2023-05-05"
 
-# just for testing/debugging currently.
-# will turn off once the whole thing is stable
 [triggers]
 crons = ["0 */12 * * *"]
 
 [[queues.producers]]
-queue = "helix-snapshot-scheduler-tenant-poll-ci"
-binding = "TENANT_POLL_QUEUE"
-
-[[queues.producers]]
 queue = "helix-snapshot-scheduler-publish-ci"
 binding = "PUBLISH_QUEUE"
-
-[[queues.consumers]]
-queue = "helix-snapshot-scheduler-tenant-poll-ci"
 
 [[r2_buckets]]
 binding = 'R2_BUCKET'
