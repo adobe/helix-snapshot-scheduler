@@ -13,13 +13,40 @@
 
 import { IttyRouter } from 'itty-router';
 
-// CORS headers for preflight OPTIONS requests
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*.aem.live, *.da.live, localhost:3000',
-  'Access-Control-Allow-Methods': 'POST',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Max-Age': '86400',
-};
+// Allowed origins for CORS
+const allowedOrigins = [
+  '*.aem.live',
+  '*.da.live',
+  'localhost:3000',
+];
+
+// Function to check if origin is allowed and return appropriate CORS headers
+function getCorsHeaders(request) {
+  const origin = request.headers.get('Origin');
+  const corsHeaders = {
+    'Access-Control-Allow-Methods': 'POST',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+  };
+
+  if (origin) {
+    // Check if origin matches any allowed pattern
+    const isAllowed = allowedOrigins.some((allowedOrigin) => {
+      if (allowedOrigin.startsWith('*.')) {
+        // Handle wildcard subdomains
+        const domain = allowedOrigin.substring(2);
+        return origin.endsWith(domain);
+      }
+      return origin === allowedOrigin;
+    });
+
+    if (isAllowed) {
+      corsHeaders['Access-Control-Allow-Origin'] = origin;
+    }
+  }
+
+  return corsHeaders;
+}
 
 export async function isAuthorized(authToken, org, site, admin = true) {
   // check if the user has access to the AEM Admin API site config for admin access
@@ -261,13 +288,13 @@ export async function getSchedule(request, env) {
 const router = IttyRouter();
 
 // Handle preflight OPTIONS requests for POST endpoints only
-router.options('/register', () => new Response(null, {
+router.options('/register', (request) => new Response(null, {
   status: 204,
-  headers: corsHeaders,
+  headers: getCorsHeaders(request),
 }));
-router.options('/schedule', () => new Response(null, {
+router.options('/schedule', (request) => new Response(null, {
   status: 204,
-  headers: corsHeaders,
+  headers: getCorsHeaders(request),
 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
