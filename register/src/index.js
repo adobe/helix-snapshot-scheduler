@@ -17,7 +17,7 @@ import { IttyRouter } from 'itty-router';
 const allowedOrigins = [
   '*.aem.live',
   '*.da.live',
-  'localhost:3000',
+  'http://localhost:3000',
 ];
 
 // Function to check if origin is allowed and return appropriate CORS headers
