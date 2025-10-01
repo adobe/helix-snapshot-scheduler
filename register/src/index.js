@@ -13,6 +13,14 @@
 
 import { IttyRouter } from 'itty-router';
 
+// CORS headers for preflight OPTIONS requests
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*.aem.live, *.da.live, localhost:3000',
+  'Access-Control-Allow-Methods': 'POST',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400',
+};
+
 export async function isAuthorized(authToken, org, site, admin = true) {
   // check if the user has access to the AEM Admin API site config for admin access
   if (admin) {
@@ -251,6 +259,17 @@ export async function getSchedule(request, env) {
 
 // Create a new router
 const router = IttyRouter();
+
+// Handle preflight OPTIONS requests for POST endpoints only
+router.options('/register', () => new Response(null, {
+  status: 204,
+  headers: corsHeaders,
+}));
+router.options('/schedule', () => new Response(null, {
+  status: 204,
+  headers: corsHeaders,
+}));
+
 router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
 router.post('/schedule', async (request, env) => updateSchedule(request, env));
