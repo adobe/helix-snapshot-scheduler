@@ -184,17 +184,17 @@ export async function updateSchedule(request, env) {
     }
 
     // Check authorization
-    const authToken = request.headers.get('Authorization') || request.headers.get('authorization');
-    if (!authToken) {
-      console.log('Update Schedule Request: No authorization token found');
-      return new Response('Unauthorized', { status: 401 });
-    }
+    // const authToken = request.headers.get('Authorization') || request.headers.get('authorization');
+    // if (!authToken) {
+    //   console.log('Update Schedule Request: No authorization token found');
+    //   return new Response('Unauthorized', { status: 401 });
+    // }
 
-    const authorized = await isAuthorized(authToken, org, site, false);
-    if (!authorized) {
-      console.log('Update Schedule Request: isAuthorized returned false');
-      return new Response('Unauthorized. You need to have basic_author access to update the scheduled publish date for a snapshot', { status: 401 });
-    }
+    // const authorized = await isAuthorized(authToken, org, site, false);
+    // if (!authorized) {
+    //   console.log('Update Schedule Request: isAuthorized returned false');
+    //   return new Response('Unauthorized. You need to have basic_author access to update the scheduled publish date for a snapshot', { status: 401 });
+    // }
 
     // Check if the org/site is registered
     const registration = await env.R2_BUCKET.get(`registered/${org}--${site}.json`);
