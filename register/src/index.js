@@ -17,6 +17,7 @@ import { IttyRouter } from 'itty-router';
 const allowedOrigins = [
   '*.aem.live',
   '*.da.live',
+  '*.aem.page',
   'http://localhost:3000',
 ];
 
@@ -39,12 +40,10 @@ function getCorsHeaders(request) {
       }
       return origin === allowedOrigin;
     });
-
     if (isAllowed) {
       corsHeaders['Access-Control-Allow-Origin'] = origin;
     }
   }
-
   return corsHeaders;
 }
 
@@ -60,7 +59,7 @@ export async function isAuthorized(authToken, org, site, admin = true) {
       },
     });
     if (!aemAdminApiResponse.ok) {
-      console.debug('Could not make a call to the AEM Admin API', aemAdminApiResponse.status, aemAdminApiResponse.statusText);
+      console.log('Could not make a call to the AEM Admin API', aemAdminApiResponse.status, aemAdminApiResponse.statusText);
       return false;
     }
   }
@@ -74,7 +73,7 @@ export async function isAuthorized(authToken, org, site, admin = true) {
     },
   });
   if (!snapshotListResponse.ok) {
-    console.debug('Could not make a call to the AEM Snapshot List API', snapshotListResponse.status, snapshotListResponse.statusText);
+    console.log('Could not make a call to the AEM Snapshot List API', snapshotListResponse.status, snapshotListResponse.statusText);
     return false;
   }
   return true;
@@ -90,24 +89,28 @@ export async function registerRequest(request, env) {
   try {
     const data = await request.json();
     if (!data) {
+      console.log('Register Request: Invalid body. Please provide org and site');
       return new Response('Invalid body. Please provide org and site', { status: 400 });
     }
     const { org, site } = data;
     if (!org || !site) {
+      console.log('Register Request: Invalid body. Please provide org and site');
       return new Response('Invalid body. Please provide org and site', { status: 400 });
     }
     const authToken = request.headers.get('Authorization');
     if (!authToken) {
+      console.log('Register Request: No authorization token found');
       return new Response('Unauthorized', { status: 401 });
     }
     const authorized = await isAuthorized(authToken, org, site, true);
     if (!authorized) {
+      console.log('Register Request: isAuthorized returned false');
       return new Response('Unauthorized', { status: 401 });
     }
     // first check if the folder already exists
     const folder = await env.R2_BUCKET.get(`registered/${org}--${site}.json`);
     if (folder) {
-      console.debug('Register Request: ', org, site, 'Folder already exists');
+      console.log('Register Request: ', org, site, 'Folder already exists');
       return new Response(`${org}/${site} is already registered`, { status: 200 });
     }
     await env.R2_BUCKET.put(`registered/${org}--${site}.json`, `{ "org": "${org}", "site": "${site}" }`);
@@ -158,8 +161,10 @@ export async function isRegistered(request, env) {
  */
 export async function updateSchedule(request, env) {
   try {
+    console.log('Update Schedule Request: starting');
     const data = await request.json();
     if (!data) {
+      console.log('Update Schedule Request: Invalid body. Please provide org, site, snapshotId, and scheduledPublish');
       return new Response('Invalid body. Please provide org, site, snapshotId, and scheduledPublish', { status: 400 });
     }
 
@@ -167,29 +172,34 @@ export async function updateSchedule(request, env) {
       org, site, snapshotId, scheduledPublish,
     } = data;
     if (!org || !site || !snapshotId || !scheduledPublish) {
+      console.log('Update Schedule Request: Invalid body. Please provide org, site, snapshotId, and scheduledPublish');
       return new Response('Invalid body. Please provide org, site, snapshotId, and scheduledPublish', { status: 400 });
     }
 
     // Validate scheduledPublish is a valid date
     const scheduledDate = new Date(scheduledPublish);
     if (Number.isNaN(scheduledDate.getTime())) {
+      console.log('Update Schedule Request: Invalid scheduledPublish date format. Please provide a valid ISO date string');
       return new Response('Invalid scheduledPublish date format. Please provide a valid ISO date string', { status: 400 });
     }
 
     // Check authorization
-    const authToken = request.headers.get('Authorization');
+    const authToken = request.headers.get('Authorization') || request.headers.get('authorization');
     if (!authToken) {
+      console.log('Update Schedule Request: No authorization token found');
       return new Response('Unauthorized', { status: 401 });
     }
 
     const authorized = await isAuthorized(authToken, org, site, false);
     if (!authorized) {
+      console.log('Update Schedule Request: isAuthorized returned false');
       return new Response('Unauthorized. You need to have basic_author access to update the scheduled publish date for a snapshot', { status: 401 });
     }
 
     // Check if the org/site is registered
     const registration = await env.R2_BUCKET.get(`registered/${org}--${site}.json`);
     if (!registration) {
+      console.log('Update Schedule Request: ', org, site, 'is not registered for scheduled publishing');
       return new Response(`${org}/${site} is not registered for scheduled publishing`, { status: 404 });
     }
 
