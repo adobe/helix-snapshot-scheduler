@@ -62,6 +62,7 @@ export async function isAuthorized(authToken, org, site, admin = true) {
       console.log('Could not make a call to the AEM Admin API', aemAdminApiResponse.status, aemAdminApiResponse.statusText);
       return false;
     }
+    return true;
   }
   // check if user has access to read the snapshot list for snapshot list access
   const snapshotListUrl = `https://admin.hlx.page/snapshot/${org}/${site}/main`;
