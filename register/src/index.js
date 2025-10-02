@@ -51,6 +51,7 @@ export async function isAuthorized(authToken, org, site, admin = true) {
   // check if the user has access to the AEM Admin API site config for admin access
   if (admin) {
     const aemAdminApiUrl = `https://admin.hlx.page/config/${org}/sites/${site}.json`;
+    console.log('AEM Admin API URL:', aemAdminApiUrl);
     const aemAdminApiResponse = await fetch(aemAdminApiUrl, {
       method: 'GET',
       headers: {
