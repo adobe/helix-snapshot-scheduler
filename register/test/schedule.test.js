@@ -116,7 +116,7 @@ describe('Schedule API Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -141,7 +141,7 @@ describe('Schedule API Tests', () => {
         // missing snapshotId
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -159,7 +159,7 @@ describe('Schedule API Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -173,7 +173,7 @@ describe('Schedule API Tests', () => {
     const request = {
       json: async () => null,
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -242,7 +242,7 @@ describe('Schedule API Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -335,7 +335,7 @@ describe('Register API Tests', () => {
     const request = {
       json: async () => null,
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -434,7 +434,7 @@ describe('Schedule Time Validation Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -482,7 +482,7 @@ describe('Schedule Time Validation Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -530,7 +530,7 @@ describe('Schedule Time Validation Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -578,7 +578,7 @@ describe('Schedule Time Validation Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -626,7 +626,7 @@ describe('Schedule Time Validation Tests', () => {
         snapshotId: 'snapshot1',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 

@@ -21,8 +21,8 @@ To register an org/site combination for snapshot scheduling:
 ```bash
 curl -X POST https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"org": "your-org", "site": "your-site"}'
+  -H "Authorization: token <your-token>" \
+  -d '{"org": "your-org", "site": "your-site", "apiKey": "your-api-key"}'
 ```
 
 **Response:**
@@ -39,12 +39,11 @@ To schedule a snapshot for publishing at a specific time:
 ```bash
 curl -X POST https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/schedule \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-token>" \
+  -H "Authorization: token <your-token>" \
   -d '{
     "org": "your-org",
     "site": "your-site",
-    "snapshotId": "snapshot-123",
-    "scheduledPublish": "2025-01-15T10:30:00Z"
+    "snapshotId": "snapshot-123"
   }'
 ```
 
@@ -60,7 +59,7 @@ To retrieve schedule data for a specific org/site:
 
 ```bash
 curl -X GET https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/schedule/your-org/your-site \
-  -H "Authorization: Bearer <your-token>"
+  -H "Authorization: token <your-token>"
 ```
 
 **Response:**
@@ -79,7 +78,7 @@ To check if an org/site is registered:
 
 ```bash
 curl -X GET https://helix-snapshot-scheduler-ci.adobeaem.workers.dev/register/your-org/your-site \
-  -H "Authorization: Bearer <your-token>"
+  -H "Authorization: token <your-token>"
 ```
 
 **Response:**

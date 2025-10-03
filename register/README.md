@@ -19,11 +19,12 @@ This service handles registration and scheduling of snapshots for scheduled publ
 ```bash
 POST /register
 Content-Type: application/json
-Authorization: Bearer <token>
+Authorization: token <token>
 
 {
   "org": "your-org",
   "site": "your-site"
+  "apiKey": "your-api-key"
 }
 ```
 
@@ -31,13 +32,12 @@ Authorization: Bearer <token>
 ```bash
 POST /schedule
 Content-Type: application/json
-Authorization: Bearer <token>
+Authorization: token <token>
 
 {
   "org": "your-org",
   "site": "your-site", 
-  "snapshotId": "snapshot-123",
-  "scheduledPublish": "2025-01-15T10:30:00Z"
+  "snapshotId": "snapshot-123"
 }
 ```
 
@@ -45,7 +45,7 @@ Authorization: Bearer <token>
 ```bash
 # Get specific org/site schedule
 GET /schedule/your-org/your-site
-Authorization: Bearer <token>
+Authorization: token <token>
 ```
 
 ## Schedule Data Structure
