@@ -25,7 +25,7 @@ const allowedOrigins = [
 function getCorsHeaders(request) {
   const origin = request.headers.get('Origin');
   const corsHeaders = {
-    'Access-Control-Allow-Methods': 'POST',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
   };
@@ -36,7 +36,9 @@ function getCorsHeaders(request) {
       if (allowedOrigin.startsWith('*.')) {
         // Handle wildcard subdomains
         const domain = allowedOrigin.substring(2);
-        return origin.endsWith(domain);
+        // Extract hostname from origin URL if it has protocol
+        const originHostname = origin.includes('://') ? new URL(origin).hostname : origin;
+        return originHostname.endsWith(domain);
       }
       return origin === allowedOrigin;
     });
@@ -45,6 +47,16 @@ function getCorsHeaders(request) {
     }
   }
   return corsHeaders;
+}
+
+// Helper function to create Response with CORS headers for browser endpoints
+function createResponse(body, request, options = {}) {
+  const corsHeaders = getCorsHeaders(request);
+  const headers = {
+    ...options.headers,
+    ...corsHeaders,
+  };
+  return new Response(body, { ...options, headers });
 }
 
 export async function setApiToken(env, org, site, apiToken) {
@@ -181,24 +193,36 @@ export async function registerRequest(request, env) {
 export async function isRegistered(request, env) {
   const { org, site } = request.params;
   if (!org || !site) {
-    return new Response(JSON.stringify({ registered: 'error', error: 'Invalid org or site' }), {
+    return createResponse(JSON.stringify({ registered: 'error', error: 'Invalid org or site' }), request, {
       status: 400,
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
   }
   try {
     const apiToken = await getApiToken(env, org, site);
     if (!apiToken) {
-      return new Response(JSON.stringify({ registered: false }), {
+      return createResponse(JSON.stringify({ registered: false }), request, {
         status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
     }
-    return new Response(JSON.stringify({ registered: true }), {
+    return createResponse(JSON.stringify({ registered: true }), request, {
       status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
   } catch (err) {
     console.error('isRegistered failed: ', org, site, err);
-    return new Response(JSON.stringify({ registered: 'error', error: 'Internal server error' }), {
+    return createResponse(JSON.stringify({ registered: 'error', error: 'Internal server error' }), request, {
       status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
   }
 }
@@ -213,7 +237,7 @@ export async function updateSchedule(request, env) {
     const data = await request.json();
     if (!data) {
       console.log('Update Schedule Request: Invalid body. Please provide org, site, snapshotId, and scheduledPublish');
-      return new Response('Invalid body. Please provide org, site, snapshotId, and scheduledPublish', { status: 400 });
+      return createResponse('Invalid body. Please provide org, site, snapshotId, and scheduledPublish', request, { status: 400 });
     }
 
     const {
@@ -221,19 +245,19 @@ export async function updateSchedule(request, env) {
     } = data;
     if (!org || !site || !snapshotId) {
       console.log('Update Schedule Request: Invalid body. Please provide org, site and snapshotId');
-      return new Response('Invalid body. Please provide org, site and snapshotId', { status: 400 });
+      return createResponse('Invalid body. Please provide org, site and snapshotId', request, { status: 400 });
     }
 
     // Get the snapshot details from the AEM Admin API
     const apiToken = await getApiToken(env, org, site);
     if (!apiToken) {
       console.log('Update Schedule Request: No API token found');
-      return new Response('Org/site not registered', { status: 404 });
+      return createResponse('Org/site not registered', request, { status: 404 });
     }
     const snapshotManifest = await fetchSnapshotManifest(org, site, snapshotId, apiToken);
     if (!snapshotManifest) {
       console.log('Update Schedule Request: Could not get snapshot details');
-      return new Response('Could not get snapshot details', { status: 404 });
+      return createResponse('Could not get snapshot details', request, { status: 404 });
     }
     const { scheduledPublish } = snapshotManifest.metadata;
     console.log('Update Schedule Request: Scheduled publish: ', scheduledPublish);
@@ -241,7 +265,7 @@ export async function updateSchedule(request, env) {
     const scheduledDate = new Date(scheduledPublish);
     if (Number.isNaN(scheduledDate.getTime())) {
       console.log('Update Schedule Request: Invalid scheduledPublish date format. Please provide a valid ISO date string');
-      return new Response('Invalid scheduledPublish date format. Please provide a valid ISO date string', { status: 400 });
+      return createResponse('Invalid scheduledPublish date format. Please provide a valid ISO date string', request, { status: 400 });
     }
 
     // Read existing schedule data
@@ -269,13 +293,13 @@ export async function updateSchedule(request, env) {
 
     console.log(`Schedule updated for ${orgSiteKey}: ${snapshotId} -> ${scheduledPublish}`);
 
-    return new Response(JSON.stringify({
+    return createResponse(JSON.stringify({
       success: true,
       message: `Schedule updated for ${org}/${site}`,
       org,
       site,
       snapshotId,
-    }), {
+    }), request, {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +307,7 @@ export async function updateSchedule(request, env) {
     });
   } catch (err) {
     console.error('Update schedule failed: ', request, err);
-    return new Response('Update schedule failed: Internal server error', { status: 500 });
+    return createResponse('Update schedule failed: Internal server error', request, { status: 500 });
   }
 }
 
@@ -301,11 +325,11 @@ export async function updateSchedule(request, env) {
 //     // Check authorization if specific org/site requested
 //     const authToken = request.headers.get('Authorization');
 //     if (!authToken) {
-//       return new Response('Unauthorized', { status: 401 });
+//       return new Response('Unauthorized', {status: 401 });
 //     }
 //     const authorized = await isAuthorized(authToken, org, site, false);
 //     if (!authorized) {
-//       return new Response('Unauthorized', { status: 401 });
+//       return new Response('Unauthorized', {status: 401 });
 //     }
 
 //     let scheduleData = {};
@@ -337,15 +361,8 @@ export async function updateSchedule(request, env) {
 // Create a new router
 const router = IttyRouter();
 
-// Handle preflight OPTIONS requests for POST endpoints only
-// router.options('/register', (request) => new Response(null, {
-//   status: 204,
-//   headers: getCorsHeaders(request),
-// }));
-router.options('/schedule', (request) => new Response(null, {
-  status: 204,
-  headers: getCorsHeaders(request),
-}));
+// Handle preflight OPTIONS requests for browser endpoints only
+router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
