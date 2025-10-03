@@ -50,20 +50,24 @@ function getCorsHeaders(request) {
 export async function setApiToken(env, org, site, apiToken) {
   try {
     if (!env || !env.SCHEDULER_KV) {
-      throw new Error('KV binding is missing in the environment.');
+      console.error('KV binding is missing in the environment.');
+      return false;
     }
     const kvConfigKey = `${org}--${site}--apiToken`;
     await env.SCHEDULER_KV.put(kvConfigKey, apiToken);
+    console.log('API token set in KV: ', org, site);
+    return true;
   } catch (err) {
     console.error('Error setting API token in KV: ', org, site, err);
-    throw new Error('Error setting API token in KV');
+    return false;
   }
 }
 
 export async function getApiToken(env, org, site) {
   try {
     if (!env || !env.SCHEDULER_KV) {
-      throw new Error('KV binding is missing in the environment.');
+      console.error('KV binding is missing in the environment.');
+      return null;
     }
     const kvConfigKey = `${org}--${site}--apiToken`;
     const apiToken = await env.SCHEDULER_KV.get(kvConfigKey);
@@ -226,14 +230,13 @@ export async function updateSchedule(request, env) {
       console.log('Update Schedule Request: No API token found');
       return new Response('Org/site not registered', { status: 404 });
     }
-    const snapshotDetails = await fetchSnapshotManifest(org, site, snapshotId, apiToken);
-    if (!snapshotDetails) {
+    const snapshotManifest = await fetchSnapshotManifest(org, site, snapshotId, apiToken);
+    if (!snapshotManifest) {
       console.log('Update Schedule Request: Could not get snapshot details');
       return new Response('Could not get snapshot details', { status: 404 });
     }
-
-    const { scheduledPublish } = snapshotDetails;
-
+    const { scheduledPublish } = snapshotManifest.metadata;
+    console.log('Update Schedule Request: Scheduled publish: ', scheduledPublish);
     // Validate scheduledPublish is a valid date
     const scheduledDate = new Date(scheduledPublish);
     if (Number.isNaN(scheduledDate.getTime())) {
