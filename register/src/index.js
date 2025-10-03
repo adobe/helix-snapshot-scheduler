@@ -280,6 +280,17 @@ export async function updateSchedule(request, env) {
       return createResponse('Invalid scheduledPublish date format. Please provide a valid ISO date string', request, { status: 400 });
     }
 
+    // Calculate minimum allowed time (5 minutes from now)
+    const now = new Date();
+    const minimumTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes in milliseconds
+
+    if (scheduledDate < minimumTime) {
+      const errorMessage = scheduledDate < now
+        ? 'Scheduled publish is in the past'
+        : 'Scheduled publish must be at least 5 minutes in the future';
+      console.log(`Update Schedule Request: ${errorMessage}. Scheduled: ${scheduledPublish}, Minimum allowed: ${minimumTime.toISOString()}`);
+      return createResponse(errorMessage, request, { status: 400 });
+    }
     // Read existing schedule data
     let scheduleData = {};
     try {

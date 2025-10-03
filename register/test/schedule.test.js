@@ -85,6 +85,30 @@ describe('Schedule API Tests', () => {
   it('should update schedule successfully', async () => {
     const { updateSchedule } = await import('../src/index.js');
 
+    // Create a valid future date (10 minutes from now)
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Mock fetch to return a valid future date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: validFutureDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
     const request = {
       json: async () => ({
         org: 'org1',
@@ -102,6 +126,9 @@ describe('Schedule API Tests', () => {
     assert.strictEqual(response.status, 200);
     assert.strictEqual(responseData.success, true);
     assert.strictEqual(responseData.snapshotId, 'snapshot1');
+
+    // Restore original fetch
+    global.fetch = originalFetch;
   });
 
   it('should return 400 for missing required fields', async () => {
@@ -157,6 +184,30 @@ describe('Schedule API Tests', () => {
   it('should handle R2 read errors gracefully', async () => {
     const { updateSchedule } = await import('../src/index.js');
 
+    // Create a valid future date (10 minutes from now)
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Mock fetch to return a valid future date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: validFutureDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
     const mockEnvWithError = {
       R2_BUCKET: {
         get: async (key) => {
@@ -200,6 +251,9 @@ describe('Schedule API Tests', () => {
 
     assert.strictEqual(response.status, 200);
     assert.strictEqual(responseData.success, true);
+
+    // Restore original fetch
+    global.fetch = originalFetch;
   });
 });
 
@@ -344,6 +398,248 @@ describe('IsRegistered API Tests', () => {
 });
 
 // GetSchedule API Tests removed - function is commented out in implementation
+
+describe('Schedule Time Validation Tests', () => {
+  it('should return 400 for scheduled publish less than 5 minutes in the future', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    // Create a date that's only 3 minutes in the future
+    const futureDate = new Date(Date.now() + 3 * 60 * 1000);
+
+    // Mock fetch to return this near-future date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: futureDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        snapshotId: 'snapshot1',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+      },
+    };
+
+    const response = await updateSchedule(request, mockEnv);
+    const responseText = await response.text();
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(responseText, 'Scheduled publish must be at least 5 minutes in the future');
+
+    // Restore original fetch
+    global.fetch = originalFetch;
+  });
+
+  it('should return 400 for scheduled publish exactly in the past', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    // Create a date that's 1 minute in the past
+    const pastDate = new Date(Date.now() - 1 * 60 * 1000);
+
+    // Mock fetch to return this past date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: pastDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        snapshotId: 'snapshot1',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+      },
+    };
+
+    const response = await updateSchedule(request, mockEnv);
+    const responseText = await response.text();
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(responseText, 'Scheduled publish is in the past');
+
+    // Restore original fetch
+    global.fetch = originalFetch;
+  });
+
+  it('should succeed for scheduled publish exactly 5 minutes in the future', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    // Create a date that's exactly 5 minutes in the future
+    const validDate = new Date(Date.now() + 5 * 60 * 1000);
+
+    // Mock fetch to return this valid date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: validDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        snapshotId: 'snapshot1',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+      },
+    };
+
+    const response = await updateSchedule(request, mockEnv);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+
+    // Restore original fetch
+    global.fetch = originalFetch;
+  });
+
+  it('should succeed for scheduled publish well in the future', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    // Create a date that's 30 minutes in the future
+    const validDate = new Date(Date.now() + 30 * 60 * 1000);
+
+    // Mock fetch to return this valid date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: validDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        snapshotId: 'snapshot1',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+      },
+    };
+
+    const response = await updateSchedule(request, mockEnv);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+
+    // Restore original fetch
+    global.fetch = originalFetch;
+  });
+
+  it('should return 400 for scheduled publish exactly 4 minutes 59 seconds in the future', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    // Create a date that's just under 5 minutes in the future (4:59)
+    const almostValidDate = new Date(Date.now() + (4 * 60 + 59) * 1000);
+
+    // Mock fetch to return this almost-valid date
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: almostValidDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        snapshotId: 'snapshot1',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+      },
+    };
+
+    const response = await updateSchedule(request, mockEnv);
+    const responseText = await response.text();
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(responseText, 'Scheduled publish must be at least 5 minutes in the future');
+
+    // Restore original fetch
+    global.fetch = originalFetch;
+  });
+});
 
 describe('Authorization Tests', () => {
   it('should return true for valid admin authorization', async () => {
