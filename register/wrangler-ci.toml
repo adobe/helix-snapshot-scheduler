@@ -4,6 +4,11 @@ name = "helix-snapshot-scheduler-ci"
 main = "src/index.js"
 compatibility_date = "2023-05-05"
 
+[[kv_namespaces]]
+binding = "SCHEDULER_KV"
+id = "bbd7a7c511834e80875bda0c6bcc43c2"
+preview_id = "bbd7a7c511834e80875bda0c6bcc43c2"
+
 [[r2_buckets]]
 binding = 'R2_BUCKET'
 bucket_name = 'helix-snapshot-scheduler-ci'

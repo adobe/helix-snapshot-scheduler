@@ -15,6 +15,23 @@
 const ADMIN_API_BASE = 'https://admin.hlx.page';
 const MAIN_BRANCH = 'main';
 
+export async function getApiToken(env, org, site) {
+  try {
+    if (!env || !env.SCHEDULER_KV) {
+      throw new Error('KV binding is missing in the environment.');
+    }
+    const kvConfigKey = `${org}--${site}--apiToken`;
+    const apiToken = await env.SCHEDULER_KV.get(kvConfigKey);
+    if (!apiToken) {
+      return null;
+    }
+    return apiToken;
+  } catch (err) {
+    console.error('Error getting API token from KV: ', org, site, err);
+    return null;
+  }
+}
+
 /**
  * Publish a snapshot by calling the AEM Admin API
  * @param {Object} env - The environment object
@@ -25,13 +42,18 @@ const MAIN_BRANCH = 'main';
  */
 async function publishSnapshot(env, org, site, snapshotId) {
   try {
+    const apiToken = await getApiToken(env, org, site);
+    if (!apiToken) {
+      console.log('Publish Snapshot Worker: No API token found');
+      throw new Error('Org/Site not registered');
+    }
     console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
     const publishResponse = await fetch(
       `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
       {
         method: 'POST',
         headers: {
-          Authorization: `token ${env.ADMIN_API_TOKEN}`,
+          Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -156,12 +178,10 @@ export default {
         const publishSuccess = await publishSnapshot(env, org, site, snapshotId);
 
         if (publishSuccess) {
-          // Step 2: Update scheduled.json to remove the published snapshot
-          await updateScheduledJson(env, org, site, snapshotId);
-
-          // Step 3: Move to completed folder
+          // Step 2: Move to completed folder
           await moveToCompleted(env, org, site, snapshotId, scheduledPublish);
-
+          // Step 3: Update scheduled.json to remove the published snapshot
+          await updateScheduledJson(env, org, site, snapshotId);
           console.log(`Successfully processed snapshot ${snapshotId} for ${org}/${site}`);
         } else {
           console.error(`Failed to publish snapshot ${snapshotId} for ${org}/${site}, not updating schedule`);

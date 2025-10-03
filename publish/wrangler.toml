@@ -4,6 +4,16 @@ name = "helix-snapshot-scheduler-publish-prod"
 main = "src/index.js"
 compatibility_date = "2023-05-05"
 
+[[kv_namespaces]]
+binding = "SCHEDULER_KV"
+id = "11afb687a55f4cb29bcba5e50e1754a2"
+preview_id = "bbd7a7c511834e80875bda0c6bcc43c2"
+
+[[r2_buckets]]
+binding = 'R2_BUCKET'
+bucket_name = 'helix-snapshot-scheduler'
+preview_bucket_name = 'helix-snapshot-scheduler-ci'
+
 [[queues.consumers]]
 queue = "helix-snapshot-scheduler-publish"
 

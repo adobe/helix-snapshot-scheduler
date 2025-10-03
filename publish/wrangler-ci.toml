@@ -7,5 +7,15 @@ compatibility_date = "2023-05-05"
 [[queues.consumers]]
 queue = "helix-snapshot-scheduler-publish-ci"
 
+[[kv_namespaces]]
+binding = "SCHEDULER_KV"
+id = "bbd7a7c511834e80875bda0c6bcc43c2"
+preview_id = "bbd7a7c511834e80875bda0c6bcc43c2"
+
+[[r2_buckets]]
+binding = 'R2_BUCKET'
+bucket_name = 'helix-snapshot-scheduler-ci'
+preview_bucket_name = 'helix-snapshot-scheduler-ci'
+
 [observability]
 enabled = true
