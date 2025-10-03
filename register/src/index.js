@@ -13,13 +13,24 @@
 
 import { IttyRouter } from 'itty-router';
 
-// Allowed origins for CORS
-const allowedOrigins = [
-  '*.aem.live',
-  '*.da.live',
-  '*.aem.page',
-  'http://localhost:3000',
-];
+// Global environment variable
+let globalEnv = null;
+
+// Get environment-specific allowed origins for CORS
+function getAllowedOrigins() {
+  const baseOrigins = [
+    '*.aem.live',
+    '*.da.live',
+    '*.aem.page',
+  ];
+
+  // Only allow localhost in CI environment for development/testing
+  if (globalEnv?.ENVIRONMENT === 'ci') {
+    return [...baseOrigins, 'http://localhost:3000'];
+  }
+
+  return baseOrigins;
+}
 
 // Function to check if origin is allowed and return appropriate CORS headers
 function getCorsHeaders(request) {
@@ -31,6 +42,7 @@ function getCorsHeaders(request) {
   };
 
   if (origin) {
+    const allowedOrigins = getAllowedOrigins();
     // Check if origin matches any allowed pattern
     const isAllowed = allowedOrigins.some((allowedOrigin) => {
       if (allowedOrigin.startsWith('*.')) {
@@ -371,4 +383,10 @@ router.post('/schedule', async (request, env) => updateSchedule(request, env));
 // catch all for invalid routes
 router.all('*', () => new Response('404, not found!', { status: 404 }));
 
-export default router;
+// Wrapper that initializes global environment and routes requests
+export default {
+  async fetch(request, env, ctx) {
+    globalEnv = env;
+    return router.fetch(request, env, ctx);
+  },
+};

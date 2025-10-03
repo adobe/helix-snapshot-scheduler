@@ -14,5 +14,8 @@ binding = 'R2_BUCKET'
 bucket_name = 'helix-snapshot-scheduler'
 preview_bucket_name = 'helix-snapshot-scheduler-ci'
 
+[vars]
+ENVIRONMENT = "production"
+
 [observability]
 enabled = true

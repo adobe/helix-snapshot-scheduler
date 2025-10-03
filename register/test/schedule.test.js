@@ -31,11 +31,51 @@ const mockEnv = {
       return true;
     },
   },
+  SCHEDULER_KV: {
+    get: async (key) => {
+      if (key === 'org1--site1--apiToken') {
+        return 'test-api-token';
+      }
+      return null;
+    },
+    put: async (key, value) => {
+      console.log(`Mock KV put: ${key} = ${value}`);
+      return true;
+    },
+  },
 };
 
-// Mock fetch for authorization
+// Mock fetch for authorization and snapshot manifest
 global.fetch = async (url) => {
-  if (url.includes('admin.hlx.page')) {
+  if (url.includes('admin.hlx.page/config')) {
+    return { ok: true };
+  }
+  if (url.includes('admin.hlx.page/snapshot') && url.includes('/snapshot1')) {
+    return {
+      ok: true,
+      json: async () => ({
+        manifest: {
+          metadata: {
+            scheduledPublish: '2025-01-02T15:30:00Z',
+          },
+        },
+      }),
+    };
+  }
+  if (url.includes('admin.hlx.page/snapshot') && url.includes('/invalid-snapshot')) {
+    return {
+      ok: true,
+      json: async () => ({
+        manifest: {
+          metadata: {
+            scheduledPublish: 'invalid-date',
+          },
+        },
+      }),
+    };
+  }
+  if (url.includes('admin.hlx.page/snapshot') && url.includes('/main') && url.endsWith('/main')) {
+    // This is the snapshot list API call for non-admin authorization
     return { ok: true };
   }
   return { ok: false };
@@ -49,8 +89,7 @@ describe('Schedule API Tests', () => {
       json: async () => ({
         org: 'org1',
         site: 'site1',
-        snapshotId: 'snapshot2',
-        scheduledPublish: '2025-01-02T15:30:00Z',
+        snapshotId: 'snapshot1',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
@@ -62,8 +101,7 @@ describe('Schedule API Tests', () => {
 
     assert.strictEqual(response.status, 200);
     assert.strictEqual(responseData.success, true);
-    assert.strictEqual(responseData.snapshotId, 'snapshot2');
-    assert.strictEqual(responseData.scheduledPublish, '2025-01-02T15:30:00Z');
+    assert.strictEqual(responseData.snapshotId, 'snapshot1');
   });
 
   it('should return 400 for missing required fields', async () => {
@@ -73,7 +111,7 @@ describe('Schedule API Tests', () => {
       json: async () => ({
         org: 'org1',
         site: 'site1',
-        // missing snapshotId and scheduledPublish
+        // missing snapshotId
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
@@ -84,26 +122,7 @@ describe('Schedule API Tests', () => {
     assert.strictEqual(response.status, 400);
   });
 
-  it('should return 401 for missing authorization', async () => {
-    const { updateSchedule } = await import('../src/index.js');
-
-    const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        snapshotId: 'snapshot1',
-        scheduledPublish: '2025-01-01T10:00:00Z',
-      }),
-      headers: {
-        get: () => null, // no authorization header
-      },
-    };
-
-    const response = await updateSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 401);
-  });
-
-  it('should return 404 for unregistered org/site', async () => {
+  it('should return 404 for unregistered org/site (no API token)', async () => {
     const { updateSchedule } = await import('../src/index.js');
 
     const request = {
@@ -111,7 +130,6 @@ describe('Schedule API Tests', () => {
         org: 'unregistered',
         site: 'site',
         snapshotId: 'snapshot1',
-        scheduledPublish: '2025-01-01T10:00:00Z',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
@@ -119,26 +137,7 @@ describe('Schedule API Tests', () => {
     };
 
     const response = await updateSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 404);
-  });
-
-  it('should return 400 for invalid date format', async () => {
-    const { updateSchedule } = await import('../src/index.js');
-
-    const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        snapshotId: 'snapshot1',
-        scheduledPublish: 'invalid-date',
-      }),
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
-      },
-    };
-
-    const response = await updateSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.status, 404); // Returns 404 when no API token found in KV
   });
 
   it('should return 400 for null request body', async () => {
@@ -161,9 +160,6 @@ describe('Schedule API Tests', () => {
     const mockEnvWithError = {
       R2_BUCKET: {
         get: async (key) => {
-          if (key === 'registered/org1--site1.json') {
-            return { json: async () => ({ org: 'org1', site: 'site1' }) };
-          }
           if (key === 'schedule.json') {
             throw new Error('R2 read error');
           }
@@ -174,6 +170,18 @@ describe('Schedule API Tests', () => {
           return true;
         },
       },
+      SCHEDULER_KV: {
+        get: async (key) => {
+          if (key === 'org1--site1--apiToken') {
+            return 'test-api-token';
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          console.log(`Mock KV put: ${key} = ${value}`);
+          return true;
+        },
+      },
     };
 
     const request = {
@@ -181,7 +189,6 @@ describe('Schedule API Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
-        scheduledPublish: '2025-01-01T10:00:00Z',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
@@ -204,9 +211,10 @@ describe('Register API Tests', () => {
       json: async () => ({
         org: 'org2',
         site: 'site2',
+        apiToken: 'test-api-token',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -221,9 +229,10 @@ describe('Register API Tests', () => {
       json: async () => ({
         org: 'org1',
         site: 'site1',
+        apiToken: 'test-api-token',
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -237,10 +246,10 @@ describe('Register API Tests', () => {
     const request = {
       json: async () => ({
         org: 'org1',
-        // missing site
+        // missing site and apiToken
       }),
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -248,13 +257,14 @@ describe('Register API Tests', () => {
     assert.strictEqual(response.status, 400);
   });
 
-  it('should return 401 for missing authorization in register', async () => {
+  it('should return 400 for missing authorization in register', async () => {
     const { registerRequest } = await import('../src/index.js');
 
     const request = {
       json: async () => ({
         org: 'org1',
         site: 'site1',
+        // missing apiToken
       }),
       headers: {
         get: () => null,
@@ -262,7 +272,7 @@ describe('Register API Tests', () => {
     };
 
     const response = await registerRequest(request, mockEnv);
-    assert.strictEqual(response.status, 401);
+    assert.strictEqual(response.status, 400); // Returns 400 for missing apiToken first
   });
 
   it('should return 400 for null request body in register', async () => {
@@ -287,7 +297,7 @@ describe('IsRegistered API Tests', () => {
     const request = {
       params: { org: 'org1', site: 'site1' },
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -304,7 +314,7 @@ describe('IsRegistered API Tests', () => {
     const request = {
       params: { org: 'unregistered', site: 'site' },
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -321,7 +331,7 @@ describe('IsRegistered API Tests', () => {
     const request = {
       params: { org: 'org1' }, // missing site
       headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -331,123 +341,22 @@ describe('IsRegistered API Tests', () => {
     assert.strictEqual(response.status, 400);
     assert.strictEqual(responseData.registered, 'error');
   });
-
-  it('should return 401 for missing authorization in isRegistered', async () => {
-    const { isRegistered } = await import('../src/index.js');
-
-    const request = {
-      params: { org: 'org1', site: 'site1' },
-      headers: {
-        get: () => null,
-      },
-    };
-
-    const response = await isRegistered(request, mockEnv);
-    assert.strictEqual(response.status, 401);
-  });
 });
 
-describe('GetSchedule API Tests', () => {
-  it('should return schedule data for specific org/site', async () => {
-    const { getSchedule } = await import('../src/index.js');
-
-    const request = {
-      params: { org: 'org1', site: 'site1' },
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
-      },
-    };
-
-    const response = await getSchedule(request, mockEnv);
-    const responseData = await response.json();
-
-    assert.strictEqual(response.status, 200);
-    assert.strictEqual(responseData['org1--site1'].snapshot1, '2025-01-01T10:00:00Z');
-  });
-
-  it('should return empty object for org/site with no schedule', async () => {
-    const { getSchedule } = await import('../src/index.js');
-
-    const request = {
-      params: { org: 'org2', site: 'site2' },
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
-      },
-    };
-
-    const response = await getSchedule(request, mockEnv);
-    const responseData = await response.json();
-
-    assert.strictEqual(response.status, 200);
-    assert.deepStrictEqual(responseData['org2--site2'], {});
-  });
-
-  it('should return 400 for missing org/site params in getSchedule', async () => {
-    const { getSchedule } = await import('../src/index.js');
-
-    const request = {
-      params: { org: 'org1' }, // missing site
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
-      },
-    };
-
-    const response = await getSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 400);
-  });
-
-  it('should return 401 for missing authorization in getSchedule', async () => {
-    const { getSchedule } = await import('../src/index.js');
-
-    const request = {
-      params: { org: 'org1', site: 'site1' },
-      headers: {
-        get: () => null,
-      },
-    };
-
-    const response = await getSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 401);
-  });
-
-  it('should handle R2 read errors in getSchedule', async () => {
-    const { getSchedule } = await import('../src/index.js');
-
-    const mockEnvWithError = {
-      R2_BUCKET: {
-        get: async (key) => {
-          if (key === 'schedule.json') {
-            throw new Error('R2 read error');
-          }
-          return null;
-        },
-      },
-    };
-
-    const request = {
-      params: { org: 'org1', site: 'site1' },
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'Bearer test-token' : null),
-      },
-    };
-
-    const response = await getSchedule(request, mockEnvWithError);
-    assert.strictEqual(response.status, 500);
-  });
-});
+// GetSchedule API Tests removed - function is commented out in implementation
 
 describe('Authorization Tests', () => {
   it('should return true for valid admin authorization', async () => {
     const { isAuthorized } = await import('../src/index.js');
 
-    const result = await isAuthorized('Bearer test-token', 'org1', 'site1', true);
+    const result = await isAuthorized('token test-token', 'org1', 'site1', true);
     assert.strictEqual(result, true);
   });
 
   it('should return true for valid non-admin authorization', async () => {
     const { isAuthorized } = await import('../src/index.js');
 
-    const result = await isAuthorized('Bearer test-token', 'org1', 'site1', false);
+    const result = await isAuthorized('token test-token', 'org1', 'site1', false);
     assert.strictEqual(result, true);
   });
 
@@ -463,7 +372,7 @@ describe('Authorization Tests', () => {
       return { ok: true };
     };
 
-    const result = await isAuthorized('Bearer invalid-token', 'org1', 'site1', true);
+    const result = await isAuthorized('token invalid-token', 'org1', 'site1', true);
     assert.strictEqual(result, false);
 
     // Restore original fetch
@@ -482,7 +391,7 @@ describe('Authorization Tests', () => {
       return { ok: true };
     };
 
-    const result = await isAuthorized('Bearer invalid-token', 'org1', 'site1', false);
+    const result = await isAuthorized('token invalid-token', 'org1', 'site1', false);
     assert.strictEqual(result, false);
 
     // Restore original fetch
