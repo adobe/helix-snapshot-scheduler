@@ -192,7 +192,7 @@ The DLQ worker stores failed snapshots for investigation:
        │                   │                      │                    ▲
        │                   │                      │                    │
        ▼                   ▼                      ▼                    │ (max retries)
-┌───────────────────────────────────────────────────────────┐         │
+┌───────────────────────────────────────────────────────────┐          │
 │                    R2 Bucket Storage                       │         │
 │  • schedule.json      - Current scheduled snapshots        │         │
 │  • completed/YYYY-MM-DD.json - Successfully published      │         │
