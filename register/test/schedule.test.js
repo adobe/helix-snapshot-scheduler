@@ -390,10 +390,10 @@ describe('IsRegistered API Tests', () => {
     };
 
     const response = await isRegistered(request, mockEnv);
-    const responseData = await response.json();
+    const errorHeader = response.headers.get('X-Error');
 
     assert.strictEqual(response.status, 400);
-    assert.strictEqual(responseData.registered, 'error');
+    assert.strictEqual(errorHeader, 'Invalid org or site');
   });
 });
 
@@ -439,10 +439,10 @@ describe('Schedule Time Validation Tests', () => {
     };
 
     const response = await updateSchedule(request, mockEnv);
-    const responseText = await response.text();
+    const errorHeader = response.headers.get('X-Error');
 
     assert.strictEqual(response.status, 400);
-    assert.strictEqual(responseText, 'Scheduled publish must be at least 5 minutes in the future');
+    assert.strictEqual(errorHeader, 'Scheduled publish must be at least 5 minutes in the future');
 
     // Restore original fetch
     global.fetch = originalFetch;
@@ -487,10 +487,10 @@ describe('Schedule Time Validation Tests', () => {
     };
 
     const response = await updateSchedule(request, mockEnv);
-    const responseText = await response.text();
+    const errorHeader = response.headers.get('X-Error');
 
     assert.strictEqual(response.status, 400);
-    assert.strictEqual(responseText, 'Scheduled publish is in the past');
+    assert.strictEqual(errorHeader, 'Scheduled publish is in the past');
 
     // Restore original fetch
     global.fetch = originalFetch;
@@ -631,10 +631,10 @@ describe('Schedule Time Validation Tests', () => {
     };
 
     const response = await updateSchedule(request, mockEnv);
-    const responseText = await response.text();
+    const errorHeader = response.headers.get('X-Error');
 
     assert.strictEqual(response.status, 400);
-    assert.strictEqual(responseText, 'Scheduled publish must be at least 5 minutes in the future');
+    assert.strictEqual(errorHeader, 'Scheduled publish must be at least 5 minutes in the future');
 
     // Restore original fetch
     global.fetch = originalFetch;

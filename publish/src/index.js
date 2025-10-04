@@ -48,7 +48,7 @@ async function publishSnapshot(env, org, site, snapshotId) {
       throw new Error('Org/Site not registered');
     }
     console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
-    const publishResponse = await fetch(
+    await fetch(
       `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
       {
         method: 'POST',
@@ -61,8 +61,6 @@ async function publishSnapshot(env, org, site, snapshotId) {
         }),
       },
     ).then((res) => res.json());
-    console.log(publishResponse);
-    console.log(`Successfully published snapshot ${snapshotId}`);
     return true;
   } catch (error) {
     console.error(`Failed to publish snapshot ${snapshotId}:`, error.message);
@@ -105,7 +103,6 @@ async function batchMoveToCompleted(env, snapshots) {
 
   // Single write operation for all snapshots
   await env.R2_BUCKET.put(completedFileName, JSON.stringify(completedSnapshots, null, 2));
-  console.log(`Batch moved ${snapshots.length} snapshots to completed folder: ${completedFileName}`);
 }
 
 /**
