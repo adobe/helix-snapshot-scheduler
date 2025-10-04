@@ -1,15 +1,12 @@
-name: Semantic Release
+name: Semantic Release and Deploy
 on:
   workflow_dispatch:
   push:
     branches:
       - 'main'
 jobs:
-  semantic_release:
+  semantic_release_and_deploy:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        worker: [publish, cron, register, dlq]
     permissions:
       contents: write
       issues: write
@@ -20,13 +17,24 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
-    - name: Install dependencies for ${{ matrix.worker }}
-      run: cd ${{ matrix.worker }} && npm ci
-    - name: Semantic Release for ${{ matrix.worker }}
-      run: cd ${{ matrix.worker }} && npm run semantic-release
+    
+    # Install root dependencies for semantic-release
+    - name: Install root dependencies
+      run: npm ci
+    
+    # Install dependencies for all workers
+    - name: Install worker dependencies
+      run: |
+        cd publish && npm ci
+        cd ../cron && npm ci
+        cd ../register && npm ci
+        cd ../dlq && npm ci
+    
+    # Run semantic-release once at root level (will deploy all workers if release is created)
+    - name: Semantic Release
+      run: npm run semantic-release
       env:
         GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         CORALOGIX_TAGGER_API_KEY: ${{ secrets.CORALOGIX_TAGGER_API_KEY }}
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        # Deployment variables
         CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_KEY }}
