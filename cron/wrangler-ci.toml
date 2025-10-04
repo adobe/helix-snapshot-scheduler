@@ -1,0 +1,20 @@
+# Top-level configuration
+account_id = "852dfa4ae1b0d579df29be65b986c101"
+name = "helix-snapshot-scheduler-cron-ci"
+main = "src/index.js"
+compatibility_date = "2023-05-05"
+
+[triggers]
+crons = ["0 */12 * * *"]
+
+[[queues.producers]]
+queue = "helix-snapshot-scheduler-publish-ci"
+binding = "PUBLISH_QUEUE"
+
+[[r2_buckets]]
+binding = 'R2_BUCKET'
+bucket_name = 'helix-snapshot-scheduler-ci'
+preview_bucket_name = 'helix-snapshot-scheduler-ci'
+
+[observability]
+enabled = true

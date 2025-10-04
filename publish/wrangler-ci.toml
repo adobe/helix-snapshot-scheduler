@@ -1,0 +1,31 @@
+# Top-level configuration
+account_id = "852dfa4ae1b0d579df29be65b986c101"
+name = "helix-snapshot-scheduler-publish-ci"
+main = "src/index.js"
+compatibility_date = "2023-05-05"
+
+[[queues.consumers]]
+queue = "helix-snapshot-scheduler-publish-ci"
+max_retries = 5
+max_wait_time_ms = 3600000
+dead_letter_queue = "helix-snapshot-scheduler-dlq-ci"
+# Retry strategy: 5 retries with exponential backoff (max 1 hour total wait)
+# This handles transient failures (R2 outages, API rate limits, network issues)
+# After max retries, failed messages are sent to DLQ for investigation
+
+[[queues.producers]]
+queue = "helix-snapshot-scheduler-dlq-ci"
+binding = "DLQ"
+
+[[kv_namespaces]]
+binding = "SCHEDULER_KV"
+id = "bbd7a7c511834e80875bda0c6bcc43c2"
+preview_id = "bbd7a7c511834e80875bda0c6bcc43c2"
+
+[[r2_buckets]]
+binding = 'R2_BUCKET'
+bucket_name = 'helix-snapshot-scheduler-ci'
+preview_bucket_name = 'helix-snapshot-scheduler-ci'
+
+[observability]
+enabled = true
