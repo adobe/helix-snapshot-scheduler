@@ -1,0 +1,18 @@
+# Top-level configuration
+account_id = "852dfa4ae1b0d579df29be65b986c101"
+name = "helix-snapshot-scheduler-dlq-ci"
+main = "src/index.js"
+compatibility_date = "2023-05-05"
+
+[[queues.consumers]]
+queue = "helix-snapshot-scheduler-dlq-ci"
+# DLQ consumer - no retries needed, just log and store failures
+
+[[r2_buckets]]
+binding = 'R2_BUCKET'
+bucket_name = 'helix-snapshot-scheduler-ci'
+preview_bucket_name = 'helix-snapshot-scheduler-ci'
+
+[observability]
+enabled = true
+

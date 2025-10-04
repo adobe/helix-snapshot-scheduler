@@ -16,6 +16,16 @@ preview_bucket_name = 'helix-snapshot-scheduler-ci'
 
 [[queues.consumers]]
 queue = "helix-snapshot-scheduler-publish"
+max_retries = 5
+max_wait_time_ms = 3600000
+dead_letter_queue = "helix-snapshot-scheduler-dlq"
+# Retry strategy: 5 retries with exponential backoff (max 1 hour total wait)
+# This handles transient failures (R2 outages, API rate limits, network issues)
+# After max retries, failed messages are sent to DLQ for investigation
+
+[[queues.producers]]
+queue = "helix-snapshot-scheduler-dlq"
+binding = "DLQ"
 
 [observability]
 enabled = true
