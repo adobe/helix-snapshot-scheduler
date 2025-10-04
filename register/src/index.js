@@ -78,7 +78,6 @@ function createErrorResponse(errorMessage, request, statusCode) {
     'X-Error': errorMessage,
     ...(request ? getCorsHeaders(request) : {}),
   };
-
   return new Response(null, { status: statusCode, headers });
 }
 

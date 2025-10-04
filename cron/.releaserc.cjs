@@ -29,7 +29,7 @@ module.exports = {
     }],
     ['@adobe/semantic-release-coralogix', {
       iconUrl: 'https://www.aem.live/media_13916754ab1f54a7a0b88dcb62cf6902d58148b1c.png',
-      applications: ['helix-snapshot-scheduler-cron']
+      applications: ['helix-snapshot-scheduler-cron-prod']
     }],
     '@semantic-release/github',
     [

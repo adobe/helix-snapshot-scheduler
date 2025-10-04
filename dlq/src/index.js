@@ -89,7 +89,6 @@ export default {
         // Don't throw - we don't want DLQ messages to fail and retry
       }
     }
-
     console.log(`DLQ Consumer processed ${batch.messages.length} failed messages`);
   },
 };
