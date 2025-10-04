@@ -4,11 +4,12 @@ A Cloudflare Workers-based system for scheduling and publishing AEM Edge Deliver
 
 ## Overview
 
-This system consists of three main components that work together to manage scheduled snapshot publishing:
+This system consists of four main components that work together to manage scheduled snapshot publishing:
 
 1. **Register** - Registers org/site combinations for snapshot scheduling and manages schedule data
 2. **Cron** - Monitors schedule data and queues snapshots for publishing
 3. **Publish** - Publishes snapshots and manages completion tracking
+4. **DLQ** - Handles failed snapshots for investigation and recovery
 
 ## Register Service
 
@@ -100,12 +101,23 @@ The cron worker runs every 5 minutes and performs the following:
 
 ### 2. Publish Worker
 
-When the publish-queue processes a snapshot:
+When the publish-queue processes a batch of snapshots:
 
-- **Publishes snapshot**: Calls the AEM Admin API to publish the snapshot
-- **Updates schedule**: Removes the published snapshot from `schedule.json` to prevent duplicate publishing
+- **Publishes snapshots**: Calls the AEM Admin API to publish each snapshot in the batch
+- **Batch optimization**: Updates schedule and completed data once per batch (not per snapshot)
+- **Updates schedule**: Removes all published snapshots from `schedule.json` in a single operation
 - **Tracks completion**: Moves completed snapshot data to `completed/YYYY-MM-DD.json` for audit trail
-- **Handles failures**: If publishing fails, the snapshot remains in `schedule.json` for retry by the cron job
+- **Retry mechanism**: Automatically retries failed publishes (5 attempts with exponential backoff)
+- **Dead Letter Queue**: After max retries, failed snapshots are sent to DLQ for investigation
+
+### 3. Dead Letter Queue (DLQ) Worker
+
+When snapshots fail after all retry attempts:
+
+- **Logs failures**: Records detailed error information for each failed snapshot
+- **Stores for investigation**: Saves failed snapshot data to `failed/YYYY-MM-DD.json` in R2
+- **Enables recovery**: Failed snapshots can be manually retried or investigated
+- **Prevents message loss**: Ensures no snapshots are silently dropped
 
 ## Data Storage
 
@@ -145,33 +157,54 @@ The publish worker tracks completed snapshots in date-based JSON files:
 ]
 ```
 
+### Failed Snapshots (`failed/YYYY-MM-DD.json`)
+
+The DLQ worker stores failed snapshots for investigation:
+
+```json
+[
+  {
+    "org": "org1",
+    "site": "site1",
+    "snapshotId": "snapshot-456",
+    "scheduledPublish": "2025-01-15T10:30:00Z",
+    "messageId": "abc-123",
+    "timestamp": 1696412100000,
+    "failedAt": "2025-01-15T10:35:45Z",
+    "reason": "exceeded-max-retries"
+  }
+]
+```
+
 ## Architecture
 
 ```
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   Register  │    │     Cron     │    │     Publish     │
-│             │    │              │    │                 │
-│ POST /register│  │ Cron Trigger │    │ Queue Processor │
-│ POST /schedule│  │ → schedule   │    │ → publish-queue │
-│ GET /schedule │  │   data       │    │ → Admin API     │
-│ Creates R2  │    │              │    │                 │
-│ entries     │    │              │    │                 │
-└─────────────┘    └──────────────┘    └─────────────────┘
-       │                   │                      │
-       │                   │                      │
-       ▼                   ▼                      ▼
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   R2 Bucket │    │ schedule.json│    │   -Update       │
-│ registered/ │    │ GET schedule │    │   schedule.json │
-│ org--site   │    │ -> Publish Q │    │   -Move to      │
-│ .json files │    │              │    │   completed/    │
-│ schedule.json│   │              │    │   YYYY-MM-DD    │
-└─────────────┘    └──────────────┘    └─────────────────┘
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌─────────────┐
+│   Register  │    │     Cron     │    │     Publish     │    │     DLQ     │
+│             │    │              │    │                 │    │             │
+│ POST /      │    │ Every 5 min  │    │ Queue Consumer  │    │ Failed Msgs │
+│  register   │    │ → Read       │    │ → Batch Process │    │ → Log &     │
+│ POST /      │    │   schedule   │    │ → Retry 5x      │    │   Store     │
+│  schedule   │    │ → Queue      │    │ → Admin API     │    │   Failures  │
+│ GET /       │    │   snapshots  │    │ → Update R2     │    │             │
+│  schedule   │    │              │    │                 │    │             │
+└─────────────┘    └──────────────┘    └─────────────────┘    └─────────────┘
+       │                   │                      │                    ▲
+       │                   │                      │                    │
+       ▼                   ▼                      ▼                    │ (max retries)
+┌───────────────────────────────────────────────────────────┐         │
+│                    R2 Bucket Storage                       │         │
+│  • schedule.json      - Current scheduled snapshots        │         │
+│  • completed/YYYY-MM-DD.json - Successfully published      │         │
+│  • failed/YYYY-MM-DD.json    - Failed after retries  ◄─────┘         │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## Environment Variables
-- `R2_BUCKET`: Cloudflare R2 bucket for storing registered tenants and schedule data (via wrangler.toml)
-- `PUBLISH_QUEUE`: Cloudflare Queue for snapshot publishing (via wrangler.toml)
+- `R2_BUCKET`: Cloudflare R2 bucket for storing schedule data, completed snapshots, and failed snapshots
+- `SCHEDULER_KV`: Cloudflare KV namespace for storing API tokens
+- `PUBLISH_QUEUE`: Cloudflare Queue for snapshot publishing with retry mechanism
+- `DLQ`: Dead Letter Queue for failed snapshots after max retries
 
 ## Authorization
 
@@ -188,9 +221,10 @@ The service validates authorization by making test calls to:
 
 Each component is deployed as a separate Cloudflare Worker automatically via Github workflows
 
-- `register/` - HTTP endpoint for registration
-- `cron/` - Scheduled worker that reads schedule data and queues snapshots
-- `publish/` - Queue worker for publishing
+- `register/` - HTTP endpoint for registration and schedule management
+- `cron/` - Scheduled worker (runs every 5 minutes) that reads schedule data and queues snapshots
+- `publish/` - Queue worker for publishing with automatic retry mechanism
+- `dlq/` - Dead Letter Queue consumer for handling permanently failed snapshots
 
 See individual `wrangler.toml` files for deployment configuration.
 
@@ -199,14 +233,18 @@ See individual `wrangler.toml` files for deployment configuration.
 ### Simplified Architecture
 - **Centralized Schedule Management**: All scheduled snapshots are stored in a single `schedule.json` file
 - **No Duplicate Publishing**: Published snapshots are immediately removed from the schedule to prevent re-publishing
-- **Audit Trail**: Completed snapshots are tracked in date-based JSON files for historical purposes
-- **Fault Tolerance**: Failed publishes remain in the schedule for automatic retry by the cron job
+- **Batch Optimization**: R2 operations are batched per queue batch for optimal performance
+- **Automatic Retry**: Failed publishes are automatically retried up to 5 times with exponential backoff
+- **Dead Letter Queue**: Permanently failed snapshots are captured in DLQ for investigation
+- **Audit Trail**: Completed and failed snapshots are tracked in date-based JSON files
+- **Fault Tolerance**: System recovers gracefully from transient failures
 
 ### Data Flow
 1. **Registration**: Org/site combinations are registered for scheduled publishing
 2. **Scheduling**: Snapshots are scheduled with specific publish times via API
-3. **Monitoring**: Cron job monitors schedule every 5 minutes for upcoming publishes
-4. **Publishing**: Queue worker publishes snapshots at the exact scheduled time
-5. **Cleanup**: Published snapshots are removed from schedule and archived
+3. **Monitoring**: Cron job monitors schedule every 5 minutes for upcoming publishes (including past-due)
+4. **Publishing**: Queue worker publishes snapshots at the scheduled time with batch optimization
+5. **Retry Logic**: Failed publishes are automatically retried (5 attempts over ~1 hour)
+6. **DLQ Handling**: Permanently failed snapshots are logged and stored for manual recovery
+7. **Cleanup**: Successfully published snapshots are removed from schedule and archived
 
-## TODO

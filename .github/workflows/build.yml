@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        worker: [publish, cron, register]
+        worker: [publish, cron, register, dlq]
 
     steps:
     - uses: actions/checkout@v4

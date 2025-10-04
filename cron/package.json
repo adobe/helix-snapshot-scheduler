@@ -20,7 +20,7 @@
   "author": "Adobe",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/cron/issues"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/issues"
   },
   "homepage": "https://github.com/adobe/helix-snapshot-scheduler/cron#readme",
   "devDependencies": {
