@@ -219,14 +219,41 @@ The service validates authorization by making test calls to:
 
 ## Deployment
 
-Each component is deployed as a separate Cloudflare Worker automatically via Github workflows
+Each component is deployed as a separate Cloudflare Worker automatically via GitHub Actions:
 
+### CI/CD Pipeline
+
+**Branch Deployments (CI Environment)**
+- When you push code to any branch (except `main`), the `build.yml` workflow runs
+- Tests are executed and all 4 workers are deployed to the CI environment using `wrangler-ci.toml` configs
+- CI workers are available at: `*-ci.adobeaem.workers.dev`
+
+**Production Deployments (Main Branch)**
+- When code is merged to `main`, the `semantic-release.yml` workflow runs
+- Semantic-release analyzes commit messages (using conventional commits: `feat:`, `fix:`, etc.)
+- If a release is warranted, it:
+  - Creates a new version and updates the CHANGELOG
+  - Deploys all 4 workers atomically to production using `wrangler.toml` configs
+  - Tags the release in GitHub
+  - Sends notifications to Coralogix and Slack
+
+**Worker Components:**
 - `register/` - HTTP endpoint for registration and schedule management
 - `cron/` - Scheduled worker (runs every 5 minutes) that reads schedule data and queues snapshots
 - `publish/` - Queue worker for publishing with automatic retry mechanism
 - `dlq/` - Dead Letter Queue consumer for handling permanently failed snapshots
 
-See individual `wrangler.toml` files for deployment configuration.
+**Manual Deployment:**
+```bash
+# Deploy to production
+cd <worker-directory>
+npm run deploy
+
+# Deploy to CI
+npm run deploy-ci
+```
+
+See individual `wrangler.toml` and `wrangler-ci.toml` files for deployment configuration.
 
 ## Key Features
 
