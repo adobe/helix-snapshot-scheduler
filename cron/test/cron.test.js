@@ -191,8 +191,8 @@ describe('Cron Service Tests', () => {
       }
     });
 
-    it('should not queue snapshots that are already past due', async () => {
-      // Mock current time to be after the scheduled time
+    it('should queue past-due snapshots immediately with zero delay', async () => {
+      // Mock current time to be after all scheduled times (10:10 > 10:00, 9:58, 9:56)
       const originalDateNow = Date.now;
       Date.now = () => new Date('2025-01-01T10:10:00Z').getTime();
 
@@ -201,7 +201,21 @@ describe('Cron Service Tests', () => {
         const result = await worker.scheduled({}, mockEnv);
 
         assert.strictEqual(result, true);
-        assert.strictEqual(queuedMessages.length, 0);
+        // All 3 snapshots should be queued since they're all past due
+        assert.strictEqual(queuedMessages.length, 3);
+
+        // Verify all snapshots have delaySeconds: 0 (immediate execution)
+        const snapshot1 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot1');
+        const snapshot2 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot2');
+        const snapshot3 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot3');
+
+        assert(snapshot1, 'snapshot1 should be queued');
+        assert(snapshot2, 'snapshot2 should be queued');
+        assert(snapshot3, 'snapshot3 should be queued');
+
+        assert.strictEqual(snapshot1.options.delaySeconds, 0);
+        assert.strictEqual(snapshot2.options.delaySeconds, 0);
+        assert.strictEqual(snapshot3.options.delaySeconds, 0);
       } finally {
         Date.now = originalDateNow;
       }
@@ -272,12 +286,21 @@ describe('Cron Service Tests', () => {
         const result = await worker.scheduled({}, mockEnv);
 
         assert.strictEqual(result, true);
-        assert.strictEqual(queuedMessages.length, 1);
+        // All 3 snapshots should be queued (snapshot1 and snapshot2 are past due, snapshot3 is now)
+        assert.strictEqual(queuedMessages.length, 3);
 
-        // Only snapshot3 should be queued since it's at the current time
+        // Find all snapshots
+        const snapshot1 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot1');
+        const snapshot2 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot2');
         const snapshot3 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot3');
 
+        assert(snapshot1, 'snapshot1 should be queued');
+        assert(snapshot2, 'snapshot2 should be queued');
         assert(snapshot3, 'snapshot3 should be queued');
+
+        // All should have delaySeconds: 0 since they're all at or before current time
+        assert.strictEqual(snapshot1.options.delaySeconds, 0);
+        assert.strictEqual(snapshot2.options.delaySeconds, 0);
         assert.strictEqual(snapshot3.options.delaySeconds, 0);
       } finally {
         Date.now = originalDateNow;

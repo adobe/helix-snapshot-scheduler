@@ -47,7 +47,7 @@ async function getScheduledSnapshots(env) {
         // Check if this snapshot is due to be published in the next 5 minutes
         // or scheduled in the past (error publishing previously scheduled snapshots)
         if (scheduledPublish <= lookaheadEnd) {
-          const delaySeconds = Math.ceil((scheduledPublish - now) / 1000) || 0;
+          const delaySeconds = Math.max(0, Math.ceil((scheduledPublish - now) / 1000));
           snapshotsToPublish.push({
             org,
             site,
