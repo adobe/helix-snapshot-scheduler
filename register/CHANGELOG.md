@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.1...v1.0.2) (2025-10-04)
+
+
+### Bug Fixes
+
+* trigger deployment ([68a7466](https://github.com/adobe/helix-snapshot-scheduler/commit/68a746682edabae71edbd895fddf6ea090c9b590))
+
 ## [1.0.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.0...v1.0.1) (2025-10-04)
 
 
