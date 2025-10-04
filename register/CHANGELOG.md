@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.0...v1.0.1) (2025-10-04)
+
+
+### Bug Fixes
+
+* testing ci/cd ([a648cd3](https://github.com/adobe/helix-snapshot-scheduler/commit/a648cd333e5792138a26c7c383b613c4ffd83c29))
+
 # 1.0.0 (2025-10-04)
 
 
