@@ -63,7 +63,7 @@ describe('Publish Snapshot Service Tests', () => {
             }),
           };
         }
-        if (key === 'completed/2025-09-25.json') { // Use today's date since Date.now() mock doesn't affect new Date()
+        if (key.startsWith('completed/') && key.endsWith('.json')) {
           return {
             json: async () => [
               {
@@ -82,9 +82,22 @@ describe('Publish Snapshot Service Tests', () => {
       put: async () => true,
     };
 
+    // Mock KV namespace
+    const mockKV = {
+      get: async (key) => {
+        // Return mock API tokens for testing
+        if (key.endsWith('--apiToken')) {
+          return 'test-api-token';
+        }
+        return null;
+      },
+      put: async () => true,
+    };
+
     // Mock environment
     mockEnv = {
       ADMIN_API_TOKEN: 'test-token',
+      SCHEDULER_KV: mockKV,
       R2_BUCKET: mockR2Bucket,
     };
 
@@ -129,7 +142,7 @@ describe('Publish Snapshot Service Tests', () => {
       assert.strictEqual(mockFetch.callCount || 1, 1);
     });
 
-    it('should handle publish API failures', async () => {
+    it('should handle publish API failures and throw to trigger retry', async () => {
       // Mock fetch to return error
       global.fetch = async () => {
         throw new Error('Publish API failed');
@@ -148,10 +161,11 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      await worker.queue(batch, mockEnv);
-
-      // Should not update schedule or move to completed on failure
-      // (This is tested implicitly through the integration test)
+      // Should throw error to trigger queue retry
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Failed to publish snapshot snapshot1 for org1\/site1/,
+      );
     });
   });
 
@@ -229,7 +243,7 @@ describe('Publish Snapshot Service Tests', () => {
       assert.strictEqual(updatedSchedule['org1--site1'], undefined);
     });
 
-    it('should handle missing schedule data gracefully', async () => {
+    it('should throw error when schedule data is missing', async () => {
       mockR2Bucket.get = async () => null;
 
       const { default: worker } = await import('../src/index.js');
@@ -245,11 +259,14 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should not throw error
-      await worker.queue(batch, mockEnv);
+      // Should throw error to trigger retry
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Schedule data not found/,
+      );
     });
 
-    it('should handle snapshot not found in schedule gracefully', async () => {
+    it('should not throw when snapshot not found in schedule (logs warning)', async () => {
       const { default: worker } = await import('../src/index.js');
 
       const batch = {
@@ -263,7 +280,7 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should not throw error
+      // Should complete successfully (logs warning but doesn't fail)
       await worker.queue(batch, mockEnv);
     });
   });
@@ -275,7 +292,8 @@ describe('Publish Snapshot Service Tests', () => {
 
       mockR2Bucket.put = async (key, data) => {
         allPutCalls.push({ key, data: JSON.parse(data) });
-        if (key === 'completed/2025-09-25.json') { // Use today's date since Date.now() mock doesn't affect new Date()
+        // Match any completed/ file with date format
+        if (key.startsWith('completed/') && key.endsWith('.json')) {
           completedData = JSON.parse(data);
         }
         return true;
@@ -314,7 +332,8 @@ describe('Publish Snapshot Service Tests', () => {
       let completedData = null;
 
       mockR2Bucket.put = async (key, data) => {
-        if (key === 'completed/2025-09-25.json') { // Use today's date since Date.now() mock doesn't affect new Date()
+        // Match any completed/ file with date format
+        if (key.startsWith('completed/') && key.endsWith('.json')) {
           completedData = JSON.parse(data);
         }
         return true;
@@ -357,7 +376,7 @@ describe('Publish Snapshot Service Tests', () => {
   });
 
   describe('queue handler integration', () => {
-    it('should process multiple messages in batch', async () => {
+    it('should process multiple messages in batch with single R2 writes', async () => {
       let scheduleUpdateCount = 0;
       let completedUpdateCount = 0;
 
@@ -365,7 +384,7 @@ describe('Publish Snapshot Service Tests', () => {
         if (key === 'schedule.json') {
           scheduleUpdateCount += 1;
         }
-        if (key === 'completed/2025-09-25.json') { // Use today's date since Date.now() mock doesn't affect new Date()
+        if (key.startsWith('completed/') && key.endsWith('.json')) {
           completedUpdateCount += 1;
         }
         return true;
@@ -396,13 +415,12 @@ describe('Publish Snapshot Service Tests', () => {
 
       await worker.queue(batch, mockEnv);
 
-      // Verify both snapshots were processed
-      // Each snapshot should trigger 2 put operations: schedule.json and completed file
-      assert.strictEqual(scheduleUpdateCount, 2);
-      assert.strictEqual(completedUpdateCount, 2);
+      // Verify batch optimization: only 1 write per file (not 1 per snapshot)
+      assert.strictEqual(scheduleUpdateCount, 1, 'Should update schedule.json once per batch');
+      assert.strictEqual(completedUpdateCount, 1, 'Should update completed file once per batch');
     });
 
-    it('should handle individual message failures gracefully', async () => {
+    it('should throw error on first failure and stop batch processing', async () => {
       // Mock fetch to fail for first message only
       let callCount = 0;
       global.fetch = async () => {
@@ -447,13 +465,17 @@ describe('Publish Snapshot Service Tests', () => {
         ],
       };
 
-      await worker.queue(batch, mockEnv);
+      // Should throw on first failure, stopping batch processing
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Failed to publish snapshot snapshot1 for org1\/site1/,
+      );
 
-      // Only the second snapshot should be processed (schedule updated once)
-      assert.strictEqual(scheduleUpdateCount, 1);
+      // No snapshots should be processed due to first failure
+      assert.strictEqual(scheduleUpdateCount, 0);
     });
 
-    it('should not update schedule when publish fails', async () => {
+    it('should not update schedule when publish fails and throw error', async () => {
       // Mock fetch to always fail
       global.fetch = async () => {
         throw new Error('Publish API failed');
@@ -480,7 +502,11 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      await worker.queue(batch, mockEnv);
+      // Should throw error to trigger retry
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Failed to publish snapshot snapshot1 for org1\/site1/,
+      );
 
       // Schedule should not be updated when publish fails
       assert.strictEqual(scheduleUpdateCount, 0);
@@ -488,7 +514,7 @@ describe('Publish Snapshot Service Tests', () => {
   });
 
   describe('error handling', () => {
-    it('should handle R2 bucket errors gracefully', async () => {
+    it('should throw error on R2 bucket errors to trigger retry', async () => {
       mockR2Bucket.get = async () => {
         throw new Error('R2 bucket error');
       };
@@ -506,11 +532,14 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should not throw error
-      await worker.queue(batch, mockEnv);
+      // Should throw error to trigger retry (R2 error from batchUpdateScheduledJson)
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /R2 bucket error/,
+      );
     });
 
-    it('should handle R2 put errors gracefully', async () => {
+    it('should throw error on R2 put errors to trigger retry', async () => {
       mockR2Bucket.put = async () => {
         throw new Error('R2 put error');
       };
@@ -528,11 +557,14 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should not throw error
-      await worker.queue(batch, mockEnv);
+      // Should throw error to trigger retry (R2 put error occurs during schedule update)
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /R2 put error|Failed to update schedule\.json/,
+      );
     });
 
-    it('should handle JSON parsing errors gracefully', async () => {
+    it('should throw error on JSON parsing errors to trigger retry', async () => {
       mockR2Bucket.get = async (key) => {
         if (key === 'schedule.json') {
           return {
@@ -557,39 +589,61 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should not throw error
-      await worker.queue(batch, mockEnv);
+      // Should throw error to trigger retry (wrapped in schedule update error)
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /JSON parsing error|Failed to update schedule\.json/,
+      );
     });
   });
 
   describe('edge cases', () => {
-    it('should handle empty message body', async () => {
+    it('should throw error on empty message body when API token missing', async () => {
+      // Mock KV to return no API token
+      mockEnv.SCHEDULER_KV.get = async () => null;
+
       const { default: worker } = await import('../src/index.js');
 
       const batch = {
         messages: [{
-          body: {},
+          body: {
+            org: 'testorg',
+            site: 'testsite',
+            snapshotId: 'snap1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
         }],
       };
 
-      // Should not throw error
-      await worker.queue(batch, mockEnv);
+      // Should throw error (no API token found)
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Org\/Site not registered|Failed to publish snapshot/,
+      );
     });
 
-    it('should handle missing required fields in message body', async () => {
+    it('should throw error on missing required fields in message body when API token missing', async () => {
+      // Mock KV to return no API token
+      mockEnv.SCHEDULER_KV.get = async () => null;
+
       const { default: worker } = await import('../src/index.js');
 
       const batch = {
         messages: [{
           body: {
             org: 'org1',
-            // Missing site, snapshotId, scheduledPublish
+            site: 'site1',
+            snapshotId: 'snap1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
       };
 
-      // Should not throw error
-      await worker.queue(batch, mockEnv);
+      // Should throw error (no API token)
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Org\/Site not registered|Failed to publish snapshot/,
+      );
     });
 
     it('should handle invalid scheduledPublish date format', async () => {

@@ -71,101 +71,89 @@ async function publishSnapshot(env, org, site, snapshotId) {
 }
 
 /**
- * Update scheduled.json to remove the published snapshot
+ * Batch move completed snapshots to completed folder (single R2 write operation)
  * @param {Object} env - The environment object
- * @param {string} org - The organization
- * @param {string} site - The site
- * @param {string} snapshotId - The snapshot ID
- * @returns {Promise<boolean>} - Success status
+ * @param {Array} snapshots - Array of {org, site, snapshotId, scheduledPublish, publishedAt}
+ * @returns {Promise<void>}
  */
-async function updateScheduledJson(env, org, site, snapshotId) {
+async function batchMoveToCompleted(env, snapshots) {
+  const today = new Date().toISOString().split('T')[0];
+  const completedFileName = `completed/${today}.json`;
+
+  // Read existing completed data for today
+  let completedSnapshots = [];
   try {
-    // Read current schedule data
-    const scheduleData = await env.R2_BUCKET.get('schedule.json');
-    if (!scheduleData) {
-      console.log('No schedule data found');
-      return false;
+    const existingCompleted = await env.R2_BUCKET.get(completedFileName);
+    if (existingCompleted) {
+      completedSnapshots = await existingCompleted.json();
     }
+  } catch (err) {
+    console.log('No existing completed data for today, starting fresh');
+  }
 
-    const schedule = await scheduleData.json();
-    const orgSiteKey = `${org}--${site}`;
+  // Add all new completed snapshots with their individual publishedAt times
+  for (const snapshot of snapshots) {
+    completedSnapshots.push({
+      org: snapshot.org,
+      site: snapshot.site,
+      snapshotId: snapshot.snapshotId,
+      scheduledPublish: snapshot.scheduledPublish,
+      publishedAt: snapshot.publishedAt,
+      publishedBy: 'scheduled-snapshot-publisher',
+    });
+  }
 
-    if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshotId]) {
-      // Remove the snapshot from scheduled.json
-      delete schedule[orgSiteKey][snapshotId];
+  // Single write operation for all snapshots
+  await env.R2_BUCKET.put(completedFileName, JSON.stringify(completedSnapshots, null, 2));
+  console.log(`Batch moved ${snapshots.length} snapshots to completed folder: ${completedFileName}`);
+}
+
+/**
+ * Batch update scheduled.json to remove multiple published snapshots (single R2 read + write)
+ * @param {Object} env - The environment object
+ * @param {Array} snapshots - Array of {org, site, snapshotId}
+ * @returns {Promise<void>}
+ */
+async function batchUpdateScheduledJson(env, snapshots) {
+  // Read current schedule data (single read)
+  const scheduleData = await env.R2_BUCKET.get('schedule.json');
+  if (!scheduleData) {
+    console.log('No schedule data found');
+    throw new Error('Schedule data not found');
+  }
+
+  const schedule = await scheduleData.json();
+  let removedCount = 0;
+
+  // Remove all published snapshots from schedule
+  for (const snapshot of snapshots) {
+    const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
+
+    if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.snapshotId]) {
+      delete schedule[orgSiteKey][snapshot.snapshotId];
+      removedCount += 1;
 
       // If no more snapshots for this org-site, remove the entire entry
       if (Object.keys(schedule[orgSiteKey]).length === 0) {
         delete schedule[orgSiteKey];
       }
-
-      // Update the schedule file
-      await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
-      console.log(`Removed snapshot ${snapshotId} from scheduled.json for ${orgSiteKey}`);
-      return true;
     } else {
-      console.warn(`Snapshot ${snapshotId} not found in scheduled.json for ${orgSiteKey}`);
-      return false;
+      console.warn(`Snapshot ${snapshot.snapshotId} not found in scheduled.json for ${orgSiteKey}`);
     }
-  } catch (error) {
-    console.error(`Failed to update scheduled.json for ${org}/${site}/${snapshotId}:`, error);
-    return false;
   }
-}
 
-/**
- * Move completed snapshot to completed folder with date-based JSON file
- * @param {Object} env - The environment object
- * @param {string} org - The organization
- * @param {string} site - The site
- * @param {string} snapshotId - The snapshot ID
- * @param {string} scheduledPublish - The original scheduled publish time
- * @returns {Promise<boolean>} - Success status
- */
-async function moveToCompleted(env, org, site, snapshotId, scheduledPublish) {
-  try {
-    const completedData = {
-      org,
-      site,
-      snapshotId,
-      scheduledPublish,
-      publishedAt: new Date().toISOString(),
-      publishedBy: 'scheduled-snapshot-publisher',
-    };
-
-    // Create date-based filename (YYYY-MM-DD.json)
-    const today = new Date().toISOString().split('T')[0];
-    const completedFileName = `completed/${today}.json`;
-
-    // Read existing completed data for today
-    let completedSnapshots = [];
-    try {
-      const existingCompleted = await env.R2_BUCKET.get(completedFileName);
-      if (existingCompleted) {
-        completedSnapshots = await existingCompleted.json();
-      }
-    } catch (err) {
-      console.log('No existing completed data for today, starting fresh');
-    }
-
-    // Add the new completed snapshot
-    completedSnapshots.push(completedData);
-
-    // Store the updated completed data
-    await env.R2_BUCKET.put(completedFileName, JSON.stringify(completedSnapshots, null, 2));
-    console.log(`Moved snapshot ${snapshotId} to completed folder: ${completedFileName}`);
-    return true;
-  } catch (error) {
-    console.error(`Failed to move snapshot ${snapshotId} to completed folder:`, error);
-    return false;
-  }
+  // Single write operation for all updates
+  await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
+  console.log(`Batch removed ${removedCount}/${snapshots.length} snapshots from scheduled.json`);
 }
 
 export default {
   async queue(batch, env) {
-    // Process each message in the batch
+    const publishedSnapshots = [];
+    // Step 1: Publish all snapshots in the batch
     for (const msg of batch.messages) {
       console.log('Publish Snapshot Worker: processing message', msg.body);
+      console.log(`Message retry count: ${msg.attempts || 0}`);
       const {
         org,
         site,
@@ -174,23 +162,53 @@ export default {
       } = msg.body;
 
       try {
-        // Step 1: Publish the snapshot
+        // Publish the snapshot
         const publishSuccess = await publishSnapshot(env, org, site, snapshotId);
 
-        if (publishSuccess) {
-          // Step 2: Move to completed folder
-          await moveToCompleted(env, org, site, snapshotId, scheduledPublish);
-          // Step 3: Update scheduled.json to remove the published snapshot
-          await updateScheduledJson(env, org, site, snapshotId);
-          console.log(`Successfully processed snapshot ${snapshotId} for ${org}/${site}`);
-        } else {
-          console.error(`Failed to publish snapshot ${snapshotId} for ${org}/${site}, not updating schedule`);
-          // Note: We don't requeue here as the cron job will retry based on scheduled.json
+        if (!publishSuccess) {
+          // Publish failed - throw error to trigger queue retry for entire batch
+          const error = new Error(`Failed to publish snapshot ${snapshotId} for ${org}/${site}`);
+          console.error(error.message);
+          throw error;
         }
+
+        // Track successfully published snapshot with publish timestamp
+        publishedSnapshots.push({
+          org,
+          site,
+          snapshotId,
+          scheduledPublish,
+          publishedAt: new Date().toISOString(), // Capture exact publish time
+        });
+
+        console.log(`Successfully published snapshot ${snapshotId} for ${org}/${site}`);
       } catch (err) {
-        console.error('Publish Snapshot Worker failed: ', org, site, snapshotId, err);
-        // Don't fail the entire process if one snapshot fails
+        console.error(`Publish Snapshot Worker failed (attempt ${msg.attempts || 1}):`, org, site, snapshotId, err.message);
+        // Re-throw to signal failure and trigger automatic retry by Cloudflare Queues
+        throw err;
       }
     }
+
+    // Step 2: Batch update completed snapshots
+    if (publishedSnapshots.length > 0) {
+      try {
+        await batchMoveToCompleted(env, publishedSnapshots);
+        console.log(`Moved ${publishedSnapshots.length} snapshots to completed folder`);
+      } catch (err) {
+        console.error('Failed to batch move to completed:', err.message);
+        throw err;
+      }
+
+      // Step 3: Batch update schedule.json
+      try {
+        await batchUpdateScheduledJson(env, publishedSnapshots);
+        console.log(`Updated schedule.json, removed ${publishedSnapshots.length} snapshots`);
+      } catch (err) {
+        console.error('Failed to batch update schedule.json:', err.message);
+        throw err;
+      }
+    }
+
+    console.log(`Successfully processed ${publishedSnapshots.length} snapshots in batch`);
   },
 };
