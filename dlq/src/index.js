@@ -93,4 +93,3 @@ export default {
     console.log(`DLQ Consumer processed ${batch.messages.length} failed messages`);
   },
 };
-

@@ -198,4 +198,3 @@ describe('DLQ Consumer Tests', () => {
     await worker.queue(batch, mockEnv);
   });
 });
-
