@@ -254,24 +254,3 @@ npm run deploy-ci
 ```
 
 See individual `wrangler.toml` and `wrangler-ci.toml` files for deployment configuration.
-
-## Key Features
-
-### Simplified Architecture
-- **Centralized Schedule Management**: All scheduled snapshots are stored in a single `schedule.json` file
-- **No Duplicate Publishing**: Published snapshots are immediately removed from the schedule to prevent re-publishing
-- **Batch Optimization**: R2 operations are batched per queue batch for optimal performance
-- **Automatic Retry**: Failed publishes are automatically retried up to 5 times with exponential backoff
-- **Dead Letter Queue**: Permanently failed snapshots are captured in DLQ for investigation
-- **Audit Trail**: Completed and failed snapshots are tracked in date-based JSON files
-- **Fault Tolerance**: System recovers gracefully from transient failures
-
-### Data Flow
-1. **Registration**: Org/site combinations are registered for scheduled publishing
-2. **Scheduling**: Snapshots are scheduled with specific publish times via API
-3. **Monitoring**: Cron job monitors schedule every 5 minutes for upcoming publishes (including past-due)
-4. **Publishing**: Queue worker publishes snapshots at the scheduled time with batch optimization
-5. **Retry Logic**: Failed publishes are automatically retried (5 attempts over ~1 hour)
-6. **DLQ Handling**: Permanently failed snapshots are logged and stored for manual recovery
-7. **Cleanup**: Successfully published snapshots are removed from schedule and archived
-
