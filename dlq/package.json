@@ -15,14 +15,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/dlq"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler"
   },
   "author": "Adobe",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/adobe/helix-snapshot-scheduler/dlq/issues"
+    "url": "https://github.com/adobe/helix-snapshot-scheduler/issues"
   },
-  "homepage": "https://github.com/adobe/helix-snapshot-scheduler/dlq#readme",
+  "homepage": "https://github.com/adobe/helix-snapshot-scheduler#readme",
   "devDependencies": {
     "@adobe/eslint-config-helix": "2.0.8",
     "@adobe/semantic-release-coralogix": "1.1.32",
