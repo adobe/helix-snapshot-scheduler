@@ -43,7 +43,6 @@ async function getScheduledSnapshots(env) {
     for (const [snapshotId, scheduledPublishStr] of Object.entries(snapshots)) {
       try {
         const scheduledPublish = new Date(scheduledPublishStr).getTime();
-
         // Check if this snapshot is due to be published in the next 5 minutes
         // or scheduled in the past (error publishing previously scheduled snapshots)
         if (scheduledPublish <= lookaheadEnd) {

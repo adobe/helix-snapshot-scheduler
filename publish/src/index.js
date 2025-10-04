@@ -138,8 +138,6 @@ async function batchUpdateScheduledJson(env, snapshots) {
       console.warn(`Snapshot ${snapshot.snapshotId} not found in scheduled.json for ${orgSiteKey}`);
     }
   }
-
-  // Single write operation for all updates
   await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
   console.log(`Batch removed ${removedCount}/${snapshots.length} snapshots from scheduled.json`);
 }
