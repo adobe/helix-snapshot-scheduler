@@ -36,8 +36,8 @@ function getAllowedOrigins() {
 function getCorsHeaders(request) {
   const origin = request.headers.get('Origin');
   const corsHeaders = {
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
   };
 
@@ -386,6 +386,7 @@ const router = IttyRouter();
 
 // Handle preflight OPTIONS requests for browser endpoints only
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
+router.options('/register/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
