@@ -1,6 +1,6 @@
 {
   "name": "@adobe/helix-snapshot-scheduler",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Helix Snapshot Scheduler - Monorepo",
   "private": true,
   "type": "module",

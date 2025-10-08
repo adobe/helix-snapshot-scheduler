@@ -1,3 +1,11 @@
+## [1.0.4](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.3...v1.0.4) (2025-10-08)
+
+
+### Bug Fixes
+
+* allow additional headers in cors ([fe3a099](https://github.com/adobe/helix-snapshot-scheduler/commit/fe3a0998aca0aad6c727b8656fbe134a46377821))
+* cors issue for register requests from browser ([47da3f0](https://github.com/adobe/helix-snapshot-scheduler/commit/47da3f0cfa451f0eba90e5adf7a3ef24f42b7d04))
+
 ## [1.0.3](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.2...v1.0.3) (2025-10-04)
 
 
