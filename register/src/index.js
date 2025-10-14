@@ -26,7 +26,7 @@ function getAllowedOrigins() {
 
   // Only allow localhost in CI environment for development/testing
   if (globalEnv?.ENVIRONMENT === 'ci') {
-    return [...baseOrigins, 'http://localhost:3000'];
+    return [...baseOrigins, 'http://localhost:3000', 'http://localhost:6456'];
   }
 
   return baseOrigins;
@@ -81,46 +81,46 @@ function createErrorResponse(errorMessage, request, statusCode) {
   return new Response(null, { status: statusCode, headers });
 }
 
-export async function setApiToken(env, org, site, apiToken) {
+export async function setApiKey(env, org, site, apiKey) {
   try {
     if (!env || !env.SCHEDULER_KV) {
       console.error('KV binding is missing in the environment.');
       return false;
     }
-    const kvConfigKey = `${org}--${site}--apiToken`;
-    await env.SCHEDULER_KV.put(kvConfigKey, apiToken);
+    const kvConfigKey = `${org}--${site}--apiKey`;
+    await env.SCHEDULER_KV.put(kvConfigKey, apiKey);
     console.log('API token set in KV: ', org, site);
     return true;
   } catch (err) {
-    console.error('Error setting API token in KV: ', org, site, err);
+    console.error('Error setting API key in KV: ', org, site, err);
     return false;
   }
 }
 
-export async function getApiToken(env, org, site) {
+export async function getApiKey(env, org, site) {
   try {
     if (!env || !env.SCHEDULER_KV) {
       console.error('KV binding is missing in the environment.');
       return null;
     }
-    const kvConfigKey = `${org}--${site}--apiToken`;
-    const apiToken = await env.SCHEDULER_KV.get(kvConfigKey);
-    if (!apiToken) {
+    const kvConfigKey = `${org}--${site}--apiKey`;
+    const apiKey = await env.SCHEDULER_KV.get(kvConfigKey);
+    if (!apiKey) {
       return null;
     }
-    return apiToken;
+    return apiKey;
   } catch (err) {
-    console.error('Error getting API token from KV: ', org, site, err);
+    console.error('Error getting API key from KV: ', org, site, err);
     return null;
   }
 }
 
-export async function fetchSnapshotManifest(org, site, snapshot, apiToken) {
+export async function fetchSnapshotManifest(org, site, snapshot, apiKey) {
   const adminURL = `https://admin.hlx.page/snapshot/${org}/${site}/main/${snapshot}`;
   const resp = await fetch(adminURL, {
     method: 'GET',
     headers: {
-      Authorization: `${apiToken}`,
+      'X-Auth-Token': `${apiKey}`,
       Accept: 'application/json',
     },
   });
@@ -180,13 +180,13 @@ export async function registerRequest(request, env) {
   try {
     const data = await request.json();
     if (!data) {
-      console.log('Register Request: Invalid body. Please provide org, site and apiToken');
-      return createErrorResponse('Invalid body. Please provide org, site and apiToken', null, 400);
+      console.log('Register Request: Invalid body. Please provide org, site and apiKey');
+      return createErrorResponse('Invalid body. Please provide org, site and apiKey', null, 400);
     }
-    const { org, site, apiToken } = data;
-    if (!org || !site || !apiToken) {
-      console.log('Register Request: Invalid body. Please provide org, site and apiToken');
-      return createErrorResponse('Invalid body. Please provide org, site and apiToken', null, 400);
+    const { org, site, apiKey } = data;
+    if (!org || !site || !apiKey) {
+      console.log('Register Request: Invalid body. Please provide org, site and apiKey');
+      return createErrorResponse('Invalid body. Please provide org, site and apiKey', null, 400);
     }
 
     const authToken = request.headers.get('Authorization');
@@ -199,10 +199,10 @@ export async function registerRequest(request, env) {
       console.log('Register Request: isAuthorized returned false');
       return createErrorResponse('Unauthorized', null, 401);
     }
-    // set the api token for the org/site
-    const success = await setApiToken(env, org, site, apiToken);
+    // set the api key for the org/site
+    const success = await setApiKey(env, org, site, apiKey);
     if (!success) {
-      console.log('Register Request: Failed to set API token');
+      console.log('Register Request: Failed to set API key');
       return createErrorResponse('Register Request failed: Internal server error', null, 500);
     }
     return new Response(null, { status: 200 });
@@ -218,8 +218,8 @@ export async function isRegistered(request, env) {
     return createErrorResponse('Invalid org or site', request, 400);
   }
   try {
-    const apiToken = await getApiToken(env, org, site);
-    if (!apiToken) {
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
       return createResponse(JSON.stringify({ registered: false }), request, {
         status: 404,
         headers: {
@@ -261,12 +261,12 @@ export async function updateSchedule(request, env) {
     }
 
     // Get the snapshot details from the AEM Admin API
-    const apiToken = await getApiToken(env, org, site);
-    if (!apiToken) {
-      console.log('Update Schedule Request: No API token found');
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
+      console.log('Update Schedule Request: No API key found');
       return createErrorResponse('Org/site not registered', request, 404);
     }
-    const snapshotManifest = await fetchSnapshotManifest(org, site, snapshotId, apiToken);
+    const snapshotManifest = await fetchSnapshotManifest(org, site, snapshotId, apiKey);
     if (!snapshotManifest) {
       console.log('Update Schedule Request: Could not get snapshot details');
       return createErrorResponse('Could not get snapshot details', request, 404);

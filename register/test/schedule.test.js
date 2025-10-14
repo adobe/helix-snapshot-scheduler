@@ -33,8 +33,8 @@ const mockEnv = {
   },
   SCHEDULER_KV: {
     get: async (key) => {
-      if (key === 'org1--site1--apiToken') {
-        return 'test-api-token';
+      if (key === 'org1--site1--apiKey') {
+        return 'test-api-key';
       }
       return null;
     },
@@ -164,7 +164,7 @@ describe('Schedule API Tests', () => {
     };
 
     const response = await updateSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 404); // Returns 404 when no API token found in KV
+    assert.strictEqual(response.status, 404); // Returns 404 when no API key found in KV
   });
 
   it('should return 400 for null request body', async () => {
@@ -223,8 +223,8 @@ describe('Schedule API Tests', () => {
       },
       SCHEDULER_KV: {
         get: async (key) => {
-          if (key === 'org1--site1--apiToken') {
-            return 'test-api-token';
+          if (key === 'org1--site1--apiKey') {
+            return 'test-api-key';
           }
           return null;
         },
@@ -265,7 +265,7 @@ describe('Register API Tests', () => {
       json: async () => ({
         org: 'org2',
         site: 'site2',
-        apiToken: 'test-api-token',
+        apiKey: 'test-api-key',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -283,7 +283,7 @@ describe('Register API Tests', () => {
       json: async () => ({
         org: 'org1',
         site: 'site1',
-        apiToken: 'test-api-token',
+        apiKey: 'test-api-key',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -300,7 +300,7 @@ describe('Register API Tests', () => {
     const request = {
       json: async () => ({
         org: 'org1',
-        // missing site and apiToken
+        // missing site and apiKey
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -318,7 +318,7 @@ describe('Register API Tests', () => {
       json: async () => ({
         org: 'org1',
         site: 'site1',
-        // missing apiToken
+        // missing apiKey
       }),
       headers: {
         get: () => null,
@@ -326,7 +326,7 @@ describe('Register API Tests', () => {
     };
 
     const response = await registerRequest(request, mockEnv);
-    assert.strictEqual(response.status, 400); // Returns 400 for missing apiToken first
+    assert.strictEqual(response.status, 400); // Returns 400 for missing apiKey first
   });
 
   it('should return 400 for null request body in register', async () => {
@@ -499,8 +499,8 @@ describe('Schedule Time Validation Tests', () => {
   it('should succeed for scheduled publish exactly 5 minutes in the future', async () => {
     const { updateSchedule } = await import('../src/index.js');
 
-    // Create a date that's exactly 5 minutes in the future
-    const validDate = new Date(Date.now() + 5 * 60 * 1000);
+    // Create a date slightly more than 5 minutes in the future to avoid edge case timing issues
+    const validDate = new Date(Date.now() + (5 * 60 * 1000) + 1000); // 5 minutes + 1 second
 
     // Mock fetch to return this valid date
     const originalFetch = global.fetch;

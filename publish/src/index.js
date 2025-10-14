@@ -15,19 +15,19 @@
 const ADMIN_API_BASE = 'https://admin.hlx.page';
 const MAIN_BRANCH = 'main';
 
-export async function getApiToken(env, org, site) {
+export async function getApiKey(env, org, site) {
   try {
     if (!env || !env.SCHEDULER_KV) {
       throw new Error('KV binding is missing in the environment.');
     }
-    const kvConfigKey = `${org}--${site}--apiToken`;
-    const apiToken = await env.SCHEDULER_KV.get(kvConfigKey);
-    if (!apiToken) {
+    const kvConfigKey = `${org}--${site}--apiKey`;
+    const apiKey = await env.SCHEDULER_KV.get(kvConfigKey);
+    if (!apiKey) {
       return null;
     }
-    return apiToken;
+    return apiKey;
   } catch (err) {
-    console.error('Error getting API token from KV: ', org, site, err);
+    console.error('Error getting API key from KV: ', org, site, err);
     return null;
   }
 }
@@ -42,8 +42,8 @@ export async function getApiToken(env, org, site) {
  */
 async function publishSnapshot(env, org, site, snapshotId) {
   try {
-    const apiToken = await getApiToken(env, org, site);
-    if (!apiToken) {
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
       console.log('Publish Snapshot Worker: No API token found');
       throw new Error('Org/Site not registered');
     }
@@ -53,7 +53,7 @@ async function publishSnapshot(env, org, site, snapshotId) {
       {
         method: 'POST',
         headers: {
-          Authorization: `token ${apiToken}`,
+          'X-Auth-Token': `${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
