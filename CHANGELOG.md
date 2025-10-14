@@ -1,3 +1,12 @@
+## [1.0.5](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.4...v1.0.5) (2025-10-14)
+
+
+### Bug Fixes
+
+* allowing for da-nx testing ([684e71e](https://github.com/adobe/helix-snapshot-scheduler/commit/684e71ed702186a6b6d3ebe1e9294207fa7c000b))
+* switch apiToken to apiKey to be consistent ([27cdb0b](https://github.com/adobe/helix-snapshot-scheduler/commit/27cdb0bd99eb83d4c69e5e2b87ec725c19a6d9a0))
+* updating publish to use apiKey instead of apiToken ([c18aee5](https://github.com/adobe/helix-snapshot-scheduler/commit/c18aee510f1c13d8f3f65f0162cb502f4881f82b))
+
 ## [1.0.4](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.3...v1.0.4) (2025-10-08)
 
 
