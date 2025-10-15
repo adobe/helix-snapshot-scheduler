@@ -48,7 +48,7 @@ async function publishSnapshot(env, org, site, snapshotId) {
       throw new Error('Org/Site not registered');
     }
     console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
-    await fetch(
+    const res = await fetch(
       `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
       {
         method: 'POST',
@@ -60,12 +60,17 @@ async function publishSnapshot(env, org, site, snapshotId) {
           publish: true,
         }),
       },
-    ).then((res) => {
-      console.log('Publish Snapshot Worker: published snapshot', org, site, snapshotId, res.status, res.statusText);
+    );
+    if (!res.ok) {
+      console.log('Publish Snapshot Worker: failed to publish snapshot', org, site, snapshotId, res.status, res.statusText);
       res.headers.forEach((header) => {
         console.log('Publish Snapshot Worker: header name', header[0], 'header value', header[1]);
       });
-      return res.json();
+      return false;
+    }
+    console.log('Publish Snapshot Worker: published snapshot', org, site, snapshotId, res.status, res.statusText);
+    res.headers.forEach((header) => {
+      console.log('Publish Snapshot Worker: header name', header[0], 'header value', header[1]);
     });
     return true;
   } catch (error) {
