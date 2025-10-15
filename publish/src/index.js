@@ -53,7 +53,7 @@ async function publishSnapshot(env, org, site, snapshotId) {
       {
         method: 'POST',
         headers: {
-          'X-Auth-Token': `${apiKey}`,
+          Authorization: `token ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -63,15 +63,11 @@ async function publishSnapshot(env, org, site, snapshotId) {
     );
     if (!res.ok) {
       console.log('Publish Snapshot Worker: failed to publish snapshot', org, site, snapshotId, res.status, res.statusText);
-      res.headers.forEach((header) => {
-        console.log('Publish Snapshot Worker: header name', header[0], 'header value', header[1]);
-      });
+      console.log('Publish Snapshot Worker: response headers', JSON.stringify(res.headers, null, 2));
       return false;
     }
     console.log('Publish Snapshot Worker: published snapshot', org, site, snapshotId, res.status, res.statusText);
-    res.headers.forEach((header) => {
-      console.log('Publish Snapshot Worker: header name', header[0], 'header value', header[1]);
-    });
+    console.log('Publish Snapshot Worker: response headers', JSON.stringify(res.headers, null, 2));
     return true;
   } catch (error) {
     console.error(`Failed to publish snapshot ${snapshotId}:`, error.message);
