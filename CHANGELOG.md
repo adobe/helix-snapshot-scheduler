@@ -1,3 +1,14 @@
+## [1.0.6](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.5...v1.0.6) (2025-10-15)
+
+
+### Bug Fixes
+
+* debugging ([f3717d6](https://github.com/adobe/helix-snapshot-scheduler/commit/f3717d68601084268753ef5bb4353b19b57108bc))
+* debugging ([c647abb](https://github.com/adobe/helix-snapshot-scheduler/commit/c647abb9cf1ad22a2c319ca0d5862f758db22412))
+* debugging more ([f0aa195](https://github.com/adobe/helix-snapshot-scheduler/commit/f0aa195f1530341cd9ed7ee63851413623e8eac1))
+* more debugs ([d1bd1f2](https://github.com/adobe/helix-snapshot-scheduler/commit/d1bd1f25b352b2bb20e8dd7961548c1780d4bb00))
+* tweaks to get final publish call working ([789913e](https://github.com/adobe/helix-snapshot-scheduler/commit/789913e4819ee635206143daacbc9c00d01f544d))
+
 ## [1.0.5](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.4...v1.0.5) (2025-10-14)
 
 
