@@ -61,7 +61,10 @@ async function publishSnapshot(env, org, site, snapshotId) {
         }),
       },
     ).then((res) => {
-      console.log('Publish Snapshot Worker: published snapshot', org, site, snapshotId, res.status, res.statusText, res.headers);
+      console.log('Publish Snapshot Worker: published snapshot', org, site, snapshotId, res.status, res.statusText);
+      res.headers.forEach((header) => {
+        console.log('Publish Snapshot Worker: header name', header[0], 'header value', header[1]);
+      });
       return res.json();
     });
     return true;
