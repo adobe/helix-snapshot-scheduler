@@ -60,7 +60,10 @@ async function publishSnapshot(env, org, site, snapshotId) {
           publish: true,
         }),
       },
-    ).then((res) => res.json());
+    ).then((res) => {
+      console.log('Publish Snapshot Worker: published snapshot', org, site, snapshotId, res.status, res.statusText, res.headers);
+      return res.json();
+    });
     return true;
   } catch (error) {
     console.error(`Failed to publish snapshot ${snapshotId}:`, error.message);
