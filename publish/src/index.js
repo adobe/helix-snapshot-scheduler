@@ -11,6 +11,8 @@
  */
 /* eslint-disable no-console */
 /* eslint-disable no-await-in-loop */
+/* eslint-disable quote-props */
+/* eslint-disable comma-dangle */
 
 const ADMIN_API_BASE = 'https://admin.hlx.page';
 const MAIN_BRANCH = 'main';
@@ -48,19 +50,24 @@ async function publishSnapshot(env, org, site, snapshotId) {
       throw new Error('Org/Site not registered');
     }
     console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
-    await fetch(
+    const res = await fetch(
       `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
       {
         method: 'POST',
         headers: {
-          'X-Auth-Token': `${apiKey}`,
+          Authorization: `token ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          publish: true,
+          'publish': 'true'
         }),
       },
-    ).then((res) => res.json());
+    );
+    if (res.status !== 200 && res.status !== 202) {
+      console.error('Publish Snapshot Worker: failed to publish snapshot', org, site, snapshotId, res.status, res.statusText);
+      return false;
+    }
+    console.log('Publish Snapshot Worker: successfully published snapshot', org, site, snapshotId, res.status, res.statusText);
     return true;
   } catch (error) {
     console.error(`Failed to publish snapshot ${snapshotId}:`, error.message);
@@ -112,34 +119,36 @@ async function batchMoveToCompleted(env, snapshots) {
  * @returns {Promise<void>}
  */
 async function batchUpdateScheduledJson(env, snapshots) {
+  try {
   // Read current schedule data (single read)
-  const scheduleData = await env.R2_BUCKET.get('schedule.json');
-  if (!scheduleData) {
-    console.log('No schedule data found');
-    throw new Error('Schedule data not found');
-  }
-
-  const schedule = await scheduleData.json();
-  let removedCount = 0;
-
-  // Remove all published snapshots from schedule
-  for (const snapshot of snapshots) {
-    const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
-
-    if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.snapshotId]) {
-      delete schedule[orgSiteKey][snapshot.snapshotId];
-      removedCount += 1;
-
-      // If no more snapshots for this org-site, remove the entire entry
-      if (Object.keys(schedule[orgSiteKey]).length === 0) {
-        delete schedule[orgSiteKey];
-      }
-    } else {
-      console.warn(`Snapshot ${snapshot.snapshotId} not found in scheduled.json for ${orgSiteKey}`);
+    const scheduleData = await env.R2_BUCKET.get('schedule.json');
+    if (!scheduleData) {
+      console.log('No schedule data found');
+      throw new Error('Schedule data not found');
     }
+
+    const schedule = await scheduleData.json();
+
+    // Remove all published snapshots from schedule
+    for (const snapshot of snapshots) {
+      const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
+
+      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.snapshotId]) {
+        delete schedule[orgSiteKey][snapshot.snapshotId];
+
+        // If no more snapshots for this org-site, remove the entire entry
+        if (Object.keys(schedule[orgSiteKey]).length === 0) {
+          delete schedule[orgSiteKey];
+        }
+      } else {
+        console.warn(`Snapshot ${snapshot.snapshotId} not found in scheduled.json for ${orgSiteKey}`);
+      }
+    }
+    await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
+  } catch (err) {
+    console.error('Failed to batch update scheduled.json:', err.message);
+    throw err;
   }
-  await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
-  console.log(`Batch removed ${removedCount}/${snapshots.length} snapshots from scheduled.json`);
 }
 
 export default {
@@ -147,7 +156,7 @@ export default {
     const publishedSnapshots = [];
     // Step 1: Publish all snapshots in the batch
     for (const msg of batch.messages) {
-      console.log('Publish Snapshot Worker: processing message', msg.body);
+      console.log('Publish Snapshot Worker: processing message');
       console.log(`Message retry count: ${msg.attempts || 0}`);
       const {
         org,
@@ -204,6 +213,6 @@ export default {
       }
     }
 
-    console.log(`Successfully processed ${publishedSnapshots.length} snapshots in batch`);
+    console.log(`Successfully processed ${publishedSnapshots.length} snapshots`);
   },
 };
