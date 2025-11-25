@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.2...v1.1.3) (2025-11-25)
+
+
+### Bug Fixes
+
+* add post body for approve call ([f6d7c10](https://github.com/adobe/helix-snapshot-scheduler/commit/f6d7c10d173e6537eb556bb8a678641716846eed))
+
 ## [1.1.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.1...v1.1.2) (2025-11-25)
 
 
