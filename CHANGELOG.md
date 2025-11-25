@@ -1,3 +1,14 @@
+## [1.0.7](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.6...v1.0.7) (2025-11-25)
+
+
+### Bug Fixes
+
+* dlq cleanup ([4944c29](https://github.com/adobe/helix-snapshot-scheduler/commit/4944c29c434177a98278321ec886034e26736f72))
+* lint issue ([c95458c](https://github.com/adobe/helix-snapshot-scheduler/commit/c95458c10210437729623f09bac4999b1682b65a))
+* update package-lock file ([7ceaf1d](https://github.com/adobe/helix-snapshot-scheduler/commit/7ceaf1d7f1cb88629db9d4e8ea85bbc8c009ebe7))
+* updating all package lock files ([d8cff34](https://github.com/adobe/helix-snapshot-scheduler/commit/d8cff34411368fe62b77ccdc559baaac71d88a23))
+* upgrade to node 24 ([9eb4d38](https://github.com/adobe/helix-snapshot-scheduler/commit/9eb4d3888efd49193ff229287553b182aec40a3c))
+
 ## [1.0.6](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.5...v1.0.6) (2025-10-15)
 
 
