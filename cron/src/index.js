@@ -40,8 +40,9 @@ async function getScheduledSnapshots(env) {
     }
 
     // Check each snapshot for this org-site
-    for (const [snapshotId, scheduledPublishStr] of Object.entries(snapshots)) {
+    for (const [snapshotId, snapshotData] of Object.entries(snapshots)) {
       try {
+        const { scheduledPublish: scheduledPublishStr, approved = false } = snapshotData;
         const scheduledPublish = new Date(scheduledPublishStr).getTime();
         // Check if this snapshot is due to be published in the next 5 minutes
         if (scheduledPublish <= lookaheadEnd) {
@@ -51,13 +52,14 @@ async function getScheduledSnapshots(env) {
             site,
             snapshotId,
             scheduledPublish: scheduledPublishStr,
+            approved,
             delaySeconds, // Ensure non-negative delay
           });
 
           console.log(`Scheduling snapshot ${snapshotId} for ${org}/${site} with ${delaySeconds}s delay`);
         }
       } catch (err) {
-        console.error(`Invalid scheduled publish date for ${orgSiteKey}/${snapshotId}: ${scheduledPublishStr}`, err);
+        console.error(`Invalid scheduled publish date for ${orgSiteKey}/${snapshotId}:`, snapshotData, err);
       }
     }
   }

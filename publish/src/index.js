@@ -40,29 +40,46 @@ export async function getApiKey(env, org, site) {
  * @param {string} org - The organization
  * @param {string} site - The site
  * @param {string} snapshotId - The snapshot ID
+ * @param {boolean} approved - Whether the snapshot is approved & published by the user
  * @returns {Promise<boolean>} - Success status
  */
-async function publishSnapshot(env, org, site, snapshotId) {
+async function publishSnapshot(env, org, site, snapshotId, approved) {
   try {
     const apiKey = await getApiKey(env, org, site);
     if (!apiKey) {
       console.log('Publish Snapshot Worker: No API token found');
       throw new Error('Org/Site not registered');
     }
-    console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
-    const res = await fetch(
-      `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `token ${apiKey}`,
-          'Content-Type': 'application/json',
+    let res;
+    if (approved) {
+      console.log('Publish Snapshot Worker: approving snapshot', org, site, snapshotId);
+      res = await fetch(
+        `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?review=approve`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `token ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
         },
-        body: JSON.stringify({
-          'publish': 'true'
-        }),
-      },
-    );
+      );
+    } else {
+      console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
+      res = await fetch(
+        `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `token ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            'publish': 'true'
+          }),
+        },
+      );
+    }
+
     if (res.status !== 200 && res.status !== 202) {
       console.error('Publish Snapshot Worker: failed to publish snapshot', org, site, snapshotId, res.status, res.statusText);
       return false;
@@ -163,11 +180,12 @@ export default {
         site,
         snapshotId,
         scheduledPublish,
+        approved = false,
       } = msg.body;
 
       try {
         // Publish the snapshot
-        const publishSuccess = await publishSnapshot(env, org, site, snapshotId);
+        const publishSuccess = await publishSnapshot(env, org, site, snapshotId, approved);
 
         if (!publishSuccess) {
           // Publish failed - throw error to trigger queue retry for entire batch
@@ -182,6 +200,7 @@ export default {
           site,
           snapshotId,
           scheduledPublish,
+          approved,
           publishedAt: new Date().toISOString(), // Capture exact publish time
         });
 

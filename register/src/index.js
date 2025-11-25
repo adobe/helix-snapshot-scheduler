@@ -254,7 +254,7 @@ export async function updateSchedule(request, env) {
     }
 
     const {
-      org, site, snapshotId,
+      org, site, snapshotId, approved = false,
     } = data;
     if (!org || !site || !snapshotId) {
       console.log('Update Schedule Request: Invalid body. Please provide org, site and snapshotId');
@@ -310,7 +310,10 @@ export async function updateSchedule(request, env) {
     }
 
     // Update the schedule with the new snapshot
-    scheduleData[orgSiteKey][snapshotId] = scheduledPublish;
+    scheduleData[orgSiteKey][snapshotId] = {
+      scheduledPublish,
+      approved,
+    };
 
     // Store the updated schedule back to R2
     await env.R2_BUCKET.put('schedule.json', JSON.stringify(scheduleData, null, 2));
