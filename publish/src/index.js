@@ -61,6 +61,10 @@ async function publishSnapshot(env, org, site, snapshotId, approved) {
             Authorization: `token ${apiKey}`,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            'review': 'approve',
+            'keepResources': 'true'
+          }),
         },
       );
     } else {
