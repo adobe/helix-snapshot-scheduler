@@ -13,9 +13,54 @@
 /* eslint-disable no-await-in-loop */
 
 /**
+ * Batch update scheduled.json to remove multiple failed snapshots
+ * @param {Object} env - The environment object
+ * @param {Array} snapshots - Array of {org, site, snapshotId}
+ * @returns {Promise<void>}
+ */
+async function batchRemoveFromScheduledJson(env, snapshots) {
+  try {
+    // Read current schedule data
+    const scheduleData = await env.R2_BUCKET.get('schedule.json');
+    if (!scheduleData) {
+      console.log('No schedule data found');
+      return;
+    }
+
+    const schedule = await scheduleData.json();
+
+    // Remove all failed snapshots from schedule
+    for (const snapshot of snapshots) {
+      const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
+
+      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.snapshotId]) {
+        delete schedule[orgSiteKey][snapshot.snapshotId];
+
+        // If no more snapshots for this org-site, remove the entire entry
+        if (Object.keys(schedule[orgSiteKey]).length === 0) {
+          delete schedule[orgSiteKey];
+        }
+
+        console.log(`Removed failed snapshot ${snapshot.snapshotId} from schedule.json for ${orgSiteKey}`);
+      } else {
+        console.warn(`Snapshot ${snapshot.snapshotId} not found in schedule.json for ${orgSiteKey}`);
+      }
+    }
+
+    // Write updated schedule back to R2
+    await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
+    console.log(`Removed ${snapshots.length} failed snapshots from schedule.json`);
+  } catch (err) {
+    console.error('Failed to batch update schedule.json:', err.message);
+    // Don't throw - we don't want DLQ messages to fail and retry
+  }
+}
+
+/**
  * Dead Letter Queue (DLQ) Consumer
  * Handles messages that failed after all retry attempts in the publish queue.
  * Logs failures and stores them in R2 for investigation and potential manual recovery.
+ * Also removes failed entries from schedule.json to prevent further processing.
  */
 
 export default {
@@ -86,6 +131,14 @@ export default {
         console.log(`Stored ${failedMessages.length} failed messages in ${failedFileName}`);
       } catch (err) {
         console.error('Failed to store DLQ messages in R2:', err);
+        // Don't throw - we don't want DLQ messages to fail and retry
+      }
+
+      // Remove failed snapshots from schedule.json
+      try {
+        await batchRemoveFromScheduledJson(env, failedMessages);
+      } catch (err) {
+        console.error('Failed to remove failed snapshots from schedule.json:', err);
         // Don't throw - we don't want DLQ messages to fail and retry
       }
     }

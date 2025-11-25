@@ -23,13 +23,22 @@ const originalConsoleError = console.error;
 describe('DLQ Consumer Tests', () => {
   let mockEnv;
   let storedData;
+  let scheduleData;
 
   beforeEach(() => {
     // Reset console mocks
     console.log = () => {};
     console.error = () => {};
 
-    storedData = null;
+    storedData = {};
+    scheduleData = {
+      'org1--site1': {
+        snapshot1: '2025-01-01T10:00:00Z',
+      },
+      'org2--site2': {
+        snapshot2: '2025-01-01T11:00:00Z',
+      },
+    };
 
     // Mock R2 bucket
     mockEnv = {
@@ -38,10 +47,18 @@ describe('DLQ Consumer Tests', () => {
           if (key.startsWith('failed/') && key.endsWith('.json')) {
             return null; // No existing failed messages
           }
+          if (key === 'schedule.json') {
+            return {
+              json: async () => scheduleData,
+            };
+          }
           return null;
         },
         put: async (key, data) => {
-          storedData = { key, data: JSON.parse(data) };
+          if (key === 'schedule.json') {
+            scheduleData = JSON.parse(data);
+          }
+          storedData[key] = JSON.parse(data);
           return true;
         },
       },
@@ -74,13 +91,16 @@ describe('DLQ Consumer Tests', () => {
 
     await worker.queue(batch, mockEnv);
 
-    // Verify message was stored
-    assert(storedData, 'Failed message should be stored');
-    assert(storedData.key.startsWith('failed/'), 'Should be stored in failed/ folder');
-    assert(storedData.key.endsWith('.json'), 'Should be a JSON file');
-    assert.strictEqual(storedData.data.length, 1, 'Should have one failed message');
+    // Verify message was stored - find the failed file key
+    const failedFileKey = Object.keys(storedData).find((key) => key.startsWith('failed/'));
+    assert(failedFileKey, 'Failed message file should be stored');
+    assert(failedFileKey.startsWith('failed/'), 'Should be stored in failed/ folder');
+    assert(failedFileKey.endsWith('.json'), 'Should be a JSON file');
 
-    const failedMessage = storedData.data[0];
+    const failedData = storedData[failedFileKey];
+    assert.strictEqual(failedData.length, 1, 'Should have one failed message');
+
+    const failedMessage = failedData[0];
     assert.strictEqual(failedMessage.org, 'org1');
     assert.strictEqual(failedMessage.site, 'site1');
     assert.strictEqual(failedMessage.snapshotId, 'snapshot1');
@@ -121,8 +141,10 @@ describe('DLQ Consumer Tests', () => {
     await worker.queue(batch, mockEnv);
 
     // Verify both messages were stored
-    assert(storedData, 'Failed messages should be stored');
-    assert.strictEqual(storedData.data.length, 2, 'Should have two failed messages');
+    const failedFileKey = Object.keys(storedData).find((key) => key.startsWith('failed/'));
+    assert(failedFileKey, 'Failed messages should be stored');
+    const failedData = storedData[failedFileKey];
+    assert.strictEqual(failedData.length, 2, 'Should have two failed messages');
   });
 
   it('should append to existing failed messages', async () => {
@@ -140,6 +162,11 @@ describe('DLQ Consumer Tests', () => {
               reason: 'exceeded-max-retries',
             },
           ],
+        };
+      }
+      if (key === 'schedule.json') {
+        return {
+          json: async () => scheduleData,
         };
       }
       return null;
@@ -165,10 +192,12 @@ describe('DLQ Consumer Tests', () => {
     await worker.queue(batch, mockEnv);
 
     // Verify new message was appended
-    assert(storedData, 'Failed messages should be stored');
-    assert.strictEqual(storedData.data.length, 2, 'Should have previous + new message');
-    assert.strictEqual(storedData.data[0].snapshotId, 'prev-snapshot', 'Previous message preserved');
-    assert.strictEqual(storedData.data[1].snapshotId, 'snapshot1', 'New message added');
+    const failedFileKey = Object.keys(storedData).find((key) => key.startsWith('failed/'));
+    assert(failedFileKey, 'Failed messages should be stored');
+    const failedData = storedData[failedFileKey];
+    assert.strictEqual(failedData.length, 2, 'Should have previous + new message');
+    assert.strictEqual(failedData[0].snapshotId, 'prev-snapshot', 'Previous message preserved');
+    assert.strictEqual(failedData[1].snapshotId, 'snapshot1', 'New message added');
   });
 
   it('should not throw error if R2 storage fails', async () => {
@@ -196,5 +225,163 @@ describe('DLQ Consumer Tests', () => {
 
     // Should not throw - DLQ consumer should be resilient
     await worker.queue(batch, mockEnv);
+  });
+
+  it('should remove failed snapshot from schedule.json', async () => {
+    const { default: worker } = await import('../src/index.js');
+
+    const batch = {
+      messages: [
+        {
+          id: 'msg-123',
+          timestamp: 1696412100000,
+          body: {
+            org: 'org1',
+            site: 'site1',
+            snapshotId: 'snapshot1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        },
+      ],
+    };
+
+    await worker.queue(batch, mockEnv);
+
+    // Verify snapshot was removed from schedule.json
+    assert(!scheduleData['org1--site1'], 'org1--site1 entry should be removed when no snapshots remain');
+    assert(scheduleData['org2--site2'], 'org2--site2 entry should remain');
+    assert.strictEqual(scheduleData['org2--site2'].snapshot2, '2025-01-01T11:00:00Z');
+  });
+
+  it('should remove only failed snapshot from schedule.json, keeping others', async () => {
+    // Add another snapshot to org1--site1
+    scheduleData['org1--site1'].snapshot3 = '2025-01-01T12:00:00Z';
+
+    const { default: worker } = await import('../src/index.js');
+
+    const batch = {
+      messages: [
+        {
+          id: 'msg-123',
+          timestamp: 1696412100000,
+          body: {
+            org: 'org1',
+            site: 'site1',
+            snapshotId: 'snapshot1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        },
+      ],
+    };
+
+    await worker.queue(batch, mockEnv);
+
+    // Verify only snapshot1 was removed, snapshot3 remains
+    assert(scheduleData['org1--site1'], 'org1--site1 entry should remain');
+    assert(!scheduleData['org1--site1'].snapshot1, 'snapshot1 should be removed');
+    assert.strictEqual(scheduleData['org1--site1'].snapshot3, '2025-01-01T12:00:00Z', 'snapshot3 should remain');
+  });
+
+  it('should remove multiple failed snapshots from schedule.json', async () => {
+    const { default: worker } = await import('../src/index.js');
+
+    const batch = {
+      messages: [
+        {
+          id: 'msg-1',
+          timestamp: 1696412100000,
+          body: {
+            org: 'org1',
+            site: 'site1',
+            snapshotId: 'snapshot1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        },
+        {
+          id: 'msg-2',
+          timestamp: 1696412200000,
+          body: {
+            org: 'org2',
+            site: 'site2',
+            snapshotId: 'snapshot2',
+            scheduledPublish: '2025-01-01T11:00:00Z',
+          },
+        },
+      ],
+    };
+
+    await worker.queue(batch, mockEnv);
+
+    // Verify both snapshots were removed from schedule.json
+    assert(!scheduleData['org1--site1'], 'org1--site1 entry should be removed');
+    assert(!scheduleData['org2--site2'], 'org2--site2 entry should be removed');
+    assert.strictEqual(Object.keys(scheduleData).length, 0, 'schedule.json should be empty');
+  });
+
+  it('should not throw error if schedule.json does not exist', async () => {
+    mockEnv.R2_BUCKET.get = async (key) => {
+      if (key === 'schedule.json') {
+        return null; // schedule.json doesn't exist
+      }
+      if (key.startsWith('failed/') && key.endsWith('.json')) {
+        return null;
+      }
+      return null;
+    };
+
+    const { default: worker } = await import('../src/index.js');
+
+    const batch = {
+      messages: [
+        {
+          id: 'msg-123',
+          timestamp: 1696412100000,
+          body: {
+            org: 'org1',
+            site: 'site1',
+            snapshotId: 'snapshot1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        },
+      ],
+    };
+
+    // Should not throw - DLQ consumer should be resilient
+    await worker.queue(batch, mockEnv);
+  });
+
+  it('should not throw error if schedule.json removal fails', async () => {
+    mockEnv.R2_BUCKET.put = async (key, data) => {
+      if (key === 'schedule.json') {
+        throw new Error('Failed to update schedule.json');
+      }
+      storedData[key] = JSON.parse(data);
+      return true;
+    };
+
+    const { default: worker } = await import('../src/index.js');
+
+    const batch = {
+      messages: [
+        {
+          id: 'msg-123',
+          timestamp: 1696412100000,
+          body: {
+            org: 'org1',
+            site: 'site1',
+            snapshotId: 'snapshot1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        },
+      ],
+    };
+
+    // Should not throw - DLQ consumer should be resilient
+    await worker.queue(batch, mockEnv);
+
+    // Verify failed message was still stored despite schedule.json error
+    const failedFileKey = Object.keys(storedData).find((key) => key.startsWith('failed/'));
+    assert(failedFileKey, 'Failed message should be stored');
+    assert(failedFileKey.startsWith('failed/'), 'Should be stored in failed/ folder');
   });
 });
