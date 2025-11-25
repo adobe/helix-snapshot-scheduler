@@ -54,7 +54,7 @@ async function publishSnapshot(env, org, site, snapshotId, approved) {
     if (approved) {
       console.log('Publish Snapshot Worker: approving snapshot', org, site, snapshotId);
       res = await fetch(
-        `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?review=approve`,
+        `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?review=approve&keepResources=true`,
         {
           method: 'POST',
           headers: {
