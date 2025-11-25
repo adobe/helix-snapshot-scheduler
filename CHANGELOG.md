@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.1...v1.1.2) (2025-11-25)
+
+
+### Bug Fixes
+
+* error handling issue ([4ba6f3b](https://github.com/adobe/helix-snapshot-scheduler/commit/4ba6f3bd127a02c12593690234b637dc40a3f180))
+
 ## [1.1.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.0...v1.1.1) (2025-11-25)
 
 
