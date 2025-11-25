@@ -59,6 +59,7 @@ async function publishSnapshot(env, org, site, snapshotId, approved) {
           method: 'POST',
           headers: {
             Authorization: `token ${apiKey}`,
+            'Content-Type': 'application/json',
           },
         },
       );
