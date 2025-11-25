@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.8...v1.1.0) (2025-11-25)
+
+
+### Features
+
+* add review approve option ([3497cc3](https://github.com/adobe/helix-snapshot-scheduler/commit/3497cc37504956dd48adf34b2456bc253802593d))
+
 ## [1.0.8](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.7...v1.0.8) (2025-11-25)
 
 
