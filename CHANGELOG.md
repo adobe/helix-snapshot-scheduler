@@ -1,3 +1,11 @@
+## [1.1.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.0...v1.1.1) (2025-11-25)
+
+
+### Bug Fixes
+
+* putting the content-type header back for now ([0d3d58d](https://github.com/adobe/helix-snapshot-scheduler/commit/0d3d58dbcae57d9dd11de84c0fc5fb1dadb9af2e))
+* review approve endpoint ([f6d4ab3](https://github.com/adobe/helix-snapshot-scheduler/commit/f6d4ab36253df499d5d57441213bf40778eac4f0))
+
 # [1.1.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.8...v1.1.0) (2025-11-25)
 
 
