@@ -351,9 +351,7 @@ describe('DLQ Consumer Tests', () => {
   });
 
   it('should not throw error if schedule.json removal fails', async () => {
-    let putCallCount = 0;
     mockEnv.R2_BUCKET.put = async (key, data) => {
-      putCallCount += 1;
       if (key === 'schedule.json') {
         throw new Error('Failed to update schedule.json');
       }
