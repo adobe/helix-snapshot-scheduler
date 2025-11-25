@@ -1,3 +1,10 @@
+## [1.0.8](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.7...v1.0.8) (2025-11-25)
+
+
+### Bug Fixes
+
+* add additional Auth header while fetching snapshot manifest ([8299f19](https://github.com/adobe/helix-snapshot-scheduler/commit/8299f19eecb5ad1b771162f5ee405832593ebb14))
+
 ## [1.0.7](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.0.6...v1.0.7) (2025-11-25)
 
 
