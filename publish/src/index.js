@@ -80,7 +80,7 @@ async function publishSnapshot(env, org, site, snapshotId, approved) {
       );
     }
 
-    if (res.status !== 200 && res.status !== 202) {
+    if (res.status >= 400) {
       console.error('Publish Snapshot Worker: failed to publish snapshot', org, site, snapshotId, res.status, res.statusText);
       return false;
     }
