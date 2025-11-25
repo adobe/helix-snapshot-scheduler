@@ -121,6 +121,7 @@ export async function fetchSnapshotManifest(org, site, snapshot, apiKey) {
     method: 'GET',
     headers: {
       'X-Auth-Token': `${apiKey}`,
+      Authorization: `token ${apiKey}`,
       Accept: 'application/json',
     },
   });
