@@ -23,7 +23,7 @@
   },
   "homepage": "https://github.com/adobe/helix-snapshot-scheduler#readme",
   "devDependencies": {
-    "@adobe/eslint-config-helix": "2.0.8",
+    "@adobe/eslint-config-helix": "3.0.15",
     "c8": "10.1.3",
     "eslint": "8.57.1",
     "mocha": "10.8.2",
