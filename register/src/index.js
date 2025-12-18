@@ -14,6 +14,7 @@
 import { IttyRouter } from 'itty-router';
 
 // Global environment variable
+// eslint-disable-next-line no-unused-vars
 let globalEnv = null;
 
 // Get environment-specific allowed origins for CORS
@@ -22,12 +23,14 @@ function getAllowedOrigins() {
     '*.aem.live',
     '*.da.live',
     '*.aem.page',
+    'http://localhost:3000',
+    'http://localhost:6456',
   ];
 
-  // Only allow localhost in CI environment for development/testing
-  if (globalEnv?.ENVIRONMENT === 'ci') {
-    return [...baseOrigins, 'http://localhost:3000', 'http://localhost:6456'];
-  }
+  // // Only allow localhost in CI environment for development/testing
+  // if (globalEnv?.ENVIRONMENT === 'ci') {
+  //   return [...baseOrigins, 'http://localhost:3000', 'http://localhost:6456'];
+  // }
 
   return baseOrigins;
 }
