@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.3...v1.1.4) (2025-12-18)
+
+
+### Bug Fixes
+
+* allow localhost testing for tools ([9ac4073](https://github.com/adobe/helix-snapshot-scheduler/commit/9ac4073e02274339137aae373d5512c8c4b10e46))
+
 ## [1.1.3](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.2...v1.1.3) (2025-11-25)
 
 
