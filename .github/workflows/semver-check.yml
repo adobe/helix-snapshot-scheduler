@@ -10,7 +10,7 @@ jobs:
       matrix:
         worker: [publish, cron, register, dlq]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check conventional commits for ${{ matrix.worker }}
         uses: amannn/action-semantic-pull-request@v5
         with:
