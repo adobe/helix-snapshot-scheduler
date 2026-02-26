@@ -405,6 +405,7 @@ export async function hasPublishPermission(authToken, org, site, path) {
     }
     const data = await resp.json();
     const permissions = data?.live?.permissions || [];
+    console.log('User permissions for this page:', path, 'Permissions:', permissions);
     return permissions.includes('write');
   } catch (err) {
     console.error('Error checking publish permission:', err);
