@@ -465,8 +465,8 @@ export async function schedulePage(request, env) {
 
     console.log(`Page schedule updated for ${orgSiteKey}: ${normalizedPath} -> ${scheduledPublish}`);
 
-    // Fire-and-forget audit log
-    fetch(`https://admin.hlx.page/log/${org}/${site}/main`, {
+    // add an entry to the audit log
+    const auditLogResponse = await fetch(`https://admin.hlx.page/log/${org}/${site}/main`, {
       method: 'POST',
       headers: {
         Authorization: `token ${apiKey}`,
@@ -481,7 +481,9 @@ export async function schedulePage(request, env) {
         }],
       }),
     }).catch((err) => console.error('Failed to post audit log:', err));
-
+    if (auditLogResponse && !auditLogResponse.ok) {
+      console.error('Failed to post audit log:', auditLogResponse.status, auditLogResponse.statusText);
+    }
     return createResponse(JSON.stringify({
       success: true,
       message: `Page schedule updated for ${org}/${site}`,
