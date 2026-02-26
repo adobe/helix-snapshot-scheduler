@@ -29,21 +29,21 @@ async function batchRemoveFromScheduledJson(env, snapshots) {
 
     const schedule = await scheduleData.json();
 
-    // Remove all failed snapshots from schedule
+    // Remove all failed entries from schedule
     for (const snapshot of snapshots) {
       const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
 
-      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.snapshotId]) {
-        delete schedule[orgSiteKey][snapshot.snapshotId];
+      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.path]) {
+        delete schedule[orgSiteKey][snapshot.path];
 
-        // If no more snapshots for this org-site, remove the entire entry
+        // If no more entries for this org-site, remove the entire entry
         if (Object.keys(schedule[orgSiteKey]).length === 0) {
           delete schedule[orgSiteKey];
         }
 
-        console.log(`Removed failed snapshot ${snapshot.snapshotId} from schedule.json for ${orgSiteKey}`);
+        console.log(`Removed failed entry ${snapshot.path} from schedule.json for ${orgSiteKey}`);
       } else {
-        console.warn(`Snapshot ${snapshot.snapshotId} not found in schedule.json for ${orgSiteKey}`);
+        console.warn(`Entry ${snapshot.path} not found in schedule.json for ${orgSiteKey}`);
       }
     }
 
@@ -74,16 +74,20 @@ export default {
       const {
         org,
         site,
-        snapshotId,
         scheduledPublish,
+        type = 'snapshot',
+        userId,
       } = msg.body;
+      // backward compat: support in-flight messages that still use snapshotId
+      const path = msg.body.path ?? msg.body.snapshotId;
 
       console.error('='.repeat(80));
       console.error('FAILED MESSAGE - Exceeded max retries');
       console.error('='.repeat(80));
       console.error(`Org: ${org}`);
       console.error(`Site: ${site}`);
-      console.error(`Snapshot ID: ${snapshotId}`);
+      console.error(`Path: ${path}`);
+      console.error(`Type: ${type}`);
       console.error(`Scheduled Publish: ${scheduledPublish}`);
       console.error(`Message ID: ${msg.id}`);
       console.error(`Timestamp: ${msg.timestamp}`);
@@ -92,8 +96,10 @@ export default {
       failedMessages.push({
         org,
         site,
-        snapshotId,
+        path,
         scheduledPublish,
+        type,
+        userId,
         messageId: msg.id,
         timestamp: msg.timestamp,
       });

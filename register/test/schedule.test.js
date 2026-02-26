@@ -641,6 +641,204 @@ describe('Schedule Time Validation Tests', () => {
   });
 });
 
+describe('SchedulePage API Tests', () => {
+  it('should schedule a page successfully', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/log')) {
+        return { ok: true };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: validFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: (name) => (name === 'Origin' ? null : null),
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.path, '/my-page');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 400 for missing required fields', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        // missing path, scheduledPublish, userId
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    assert.strictEqual(response.status, 400);
+  });
+
+  it('should return 404 for unregistered org/site', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    const request = {
+      json: async () => ({
+        org: 'unregistered',
+        site: 'site',
+        path: '/my-page',
+        scheduledPublish: validFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    assert.strictEqual(response.status, 404);
+  });
+
+  it('should return 400 for scheduledPublish less than 5 minutes in future', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const nearFutureDate = new Date(Date.now() + 3 * 60 * 1000);
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: nearFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    const errorHeader = response.headers.get('X-Error');
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(errorHeader, 'Scheduled publish must be at least 5 minutes in the future');
+  });
+
+  it('should return 400 for scheduledPublish in the past', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const pastDate = new Date(Date.now() - 60 * 1000);
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: pastDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    const errorHeader = response.headers.get('X-Error');
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(errorHeader, 'Scheduled publish is in the past');
+  });
+
+  it('should return 400 for invalid scheduledPublish date', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: 'not-a-date',
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    assert.strictEqual(response.status, 400);
+  });
+
+  it('should store type: page entry in schedule.json', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+    let storedSchedule = null;
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({ ok: true });
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return { json: async () => ({}) };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: validFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    await schedulePage(request, mockEnvWithCapture);
+
+    assert(storedSchedule, 'Schedule should be stored');
+    const entry = storedSchedule['org1--site1']['/my-page'];
+    assert(entry, 'Page entry should be in schedule');
+    assert.strictEqual(entry.type, 'page');
+    assert.strictEqual(entry.userId, 'user@example.com');
+    assert.strictEqual(entry.scheduledPublish, validFutureDate.toISOString());
+
+    global.fetch = originalFetch;
+  });
+});
+
 describe('Authorization Tests', () => {
   it('should return true for valid admin authorization', async () => {
     const { isAuthorized } = await import('../src/index.js');

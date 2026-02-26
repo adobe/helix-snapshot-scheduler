@@ -33,10 +33,10 @@ describe('DLQ Consumer Tests', () => {
     storedData = {};
     scheduleData = {
       'org1--site1': {
-        snapshot1: '2025-01-01T10:00:00Z',
+        snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
       },
       'org2--site2': {
-        snapshot2: '2025-01-01T11:00:00Z',
+        snapshot2: { scheduledPublish: '2025-01-01T11:00:00Z', approved: false },
       },
     };
 
@@ -82,7 +82,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -103,7 +103,7 @@ describe('DLQ Consumer Tests', () => {
     const failedMessage = failedData[0];
     assert.strictEqual(failedMessage.org, 'org1');
     assert.strictEqual(failedMessage.site, 'site1');
-    assert.strictEqual(failedMessage.snapshotId, 'snapshot1');
+    assert.strictEqual(failedMessage.path, 'snapshot1');
     assert.strictEqual(failedMessage.scheduledPublish, '2025-01-01T10:00:00Z');
     assert.strictEqual(failedMessage.messageId, 'msg-123');
     assert.strictEqual(failedMessage.reason, 'exceeded-max-retries');
@@ -121,7 +121,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -131,7 +131,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org2',
             site: 'site2',
-            snapshotId: 'snapshot2',
+            path: 'snapshot2',
             scheduledPublish: '2025-01-01T11:00:00Z',
           },
         },
@@ -156,7 +156,7 @@ describe('DLQ Consumer Tests', () => {
             {
               org: 'prev-org',
               site: 'prev-site',
-              snapshotId: 'prev-snapshot',
+              path: 'prev-snapshot',
               scheduledPublish: '2025-01-01T09:00:00Z',
               failedAt: '2025-01-01T09:05:00Z',
               reason: 'exceeded-max-retries',
@@ -182,7 +182,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -196,8 +196,8 @@ describe('DLQ Consumer Tests', () => {
     assert(failedFileKey, 'Failed messages should be stored');
     const failedData = storedData[failedFileKey];
     assert.strictEqual(failedData.length, 2, 'Should have previous + new message');
-    assert.strictEqual(failedData[0].snapshotId, 'prev-snapshot', 'Previous message preserved');
-    assert.strictEqual(failedData[1].snapshotId, 'snapshot1', 'New message added');
+    assert.strictEqual(failedData[0].path, 'prev-snapshot', 'Previous message preserved');
+    assert.strictEqual(failedData[1].path, 'snapshot1', 'New message added');
   });
 
   it('should not throw error if R2 storage fails', async () => {
@@ -216,7 +216,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -238,7 +238,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -250,12 +250,12 @@ describe('DLQ Consumer Tests', () => {
     // Verify snapshot was removed from schedule.json
     assert(!scheduleData['org1--site1'], 'org1--site1 entry should be removed when no snapshots remain');
     assert(scheduleData['org2--site2'], 'org2--site2 entry should remain');
-    assert.strictEqual(scheduleData['org2--site2'].snapshot2, '2025-01-01T11:00:00Z');
+    assert(scheduleData['org2--site2'].snapshot2, 'snapshot2 should remain in schedule');
   });
 
   it('should remove only failed snapshot from schedule.json, keeping others', async () => {
     // Add another snapshot to org1--site1
-    scheduleData['org1--site1'].snapshot3 = '2025-01-01T12:00:00Z';
+    scheduleData['org1--site1'].snapshot3 = { scheduledPublish: '2025-01-01T12:00:00Z', approved: false };
 
     const { default: worker } = await import('../src/index.js');
 
@@ -267,7 +267,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -279,7 +279,7 @@ describe('DLQ Consumer Tests', () => {
     // Verify only snapshot1 was removed, snapshot3 remains
     assert(scheduleData['org1--site1'], 'org1--site1 entry should remain');
     assert(!scheduleData['org1--site1'].snapshot1, 'snapshot1 should be removed');
-    assert.strictEqual(scheduleData['org1--site1'].snapshot3, '2025-01-01T12:00:00Z', 'snapshot3 should remain');
+    assert(scheduleData['org1--site1'].snapshot3, 'snapshot3 should remain');
   });
 
   it('should remove multiple failed snapshots from schedule.json', async () => {
@@ -293,7 +293,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -303,7 +303,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org2',
             site: 'site2',
-            snapshotId: 'snapshot2',
+            path: 'snapshot2',
             scheduledPublish: '2025-01-01T11:00:00Z',
           },
         },
@@ -339,7 +339,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },
@@ -369,7 +369,7 @@ describe('DLQ Consumer Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         },

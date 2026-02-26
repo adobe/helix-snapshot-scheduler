@@ -51,9 +51,9 @@ describe('Cron Service Tests', () => {
             return {
               json: async () => ({
                 'org1--site1': {
-                  snapshot1: '2025-01-01T09:56:00Z',
-                  snapshot2: '2025-01-01T09:58:00Z',
-                  snapshot3: '2025-01-01T10:00:00Z',
+                  snapshot1: { scheduledPublish: '2025-01-01T09:56:00Z', approved: false },
+                  snapshot2: { scheduledPublish: '2025-01-01T09:58:00Z', approved: false },
+                  snapshot3: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
                 },
               }),
             };
@@ -99,7 +99,7 @@ describe('Cron Service Tests', () => {
       mockEnv.R2_BUCKET.get = async () => ({
         json: async () => ({
           'invalid-key': {
-            snapshot1: '2025-01-01T10:00:00Z',
+            snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
           },
         }),
       });
@@ -115,8 +115,8 @@ describe('Cron Service Tests', () => {
       mockEnv.R2_BUCKET.get = async () => ({
         json: async () => ({
           'org1--site1': {
-            snapshot1: 'invalid-date',
-            snapshot2: '2025-01-01T10:00:00Z',
+            snapshot1: { scheduledPublish: 'invalid-date', approved: false },
+            snapshot2: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
           },
         }),
       });
@@ -131,7 +131,7 @@ describe('Cron Service Tests', () => {
 
         assert.strictEqual(result, true);
         assert.strictEqual(queuedMessages.length, 1);
-        assert.strictEqual(queuedMessages[0].message.snapshotId, 'snapshot2');
+        assert.strictEqual(queuedMessages[0].message.path, 'snapshot2');
       } finally {
         Date.now = originalDateNow;
       }
@@ -152,9 +152,9 @@ describe('Cron Service Tests', () => {
         assert.strictEqual(queuedMessages.length, 3);
 
         // Check that all snapshots were queued with correct delays
-        const snapshot1 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot1');
-        const snapshot2 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot2');
-        const snapshot3 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot3');
+        const snapshot1 = queuedMessages.find((m) => m.message.path === 'snapshot1');
+        const snapshot2 = queuedMessages.find((m) => m.message.path === 'snapshot2');
+        const snapshot3 = queuedMessages.find((m) => m.message.path === 'snapshot3');
 
         assert(snapshot1, 'snapshot1 should be queued');
         assert(snapshot2, 'snapshot2 should be queued');
@@ -168,7 +168,7 @@ describe('Cron Service Tests', () => {
         // Check message structure
         assert.strictEqual(snapshot1.message.org, 'org1');
         assert.strictEqual(snapshot1.message.site, 'site1');
-        assert.strictEqual(snapshot1.message.snapshotId, 'snapshot1');
+        assert.strictEqual(snapshot1.message.path, 'snapshot1');
         assert.strictEqual(snapshot1.message.scheduledPublish, '2025-01-01T09:56:00Z');
       } finally {
         Date.now = originalDateNow;
@@ -205,9 +205,9 @@ describe('Cron Service Tests', () => {
         assert.strictEqual(queuedMessages.length, 3);
 
         // Verify all snapshots have delaySeconds: 0 (immediate execution)
-        const snapshot1 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot1');
-        const snapshot2 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot2');
-        const snapshot3 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot3');
+        const snapshot1 = queuedMessages.find((m) => m.message.path === 'snapshot1');
+        const snapshot2 = queuedMessages.find((m) => m.message.path === 'snapshot2');
+        const snapshot3 = queuedMessages.find((m) => m.message.path === 'snapshot3');
 
         assert(snapshot1, 'snapshot1 should be queued');
         assert(snapshot2, 'snapshot2 should be queued');
@@ -290,9 +290,9 @@ describe('Cron Service Tests', () => {
         assert.strictEqual(queuedMessages.length, 3);
 
         // Find all snapshots
-        const snapshot1 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot1');
-        const snapshot2 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot2');
-        const snapshot3 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot3');
+        const snapshot1 = queuedMessages.find((m) => m.message.path === 'snapshot1');
+        const snapshot2 = queuedMessages.find((m) => m.message.path === 'snapshot2');
+        const snapshot3 = queuedMessages.find((m) => m.message.path === 'snapshot3');
 
         assert(snapshot1, 'snapshot1 should be queued');
         assert(snapshot2, 'snapshot2 should be queued');
@@ -319,9 +319,9 @@ describe('Cron Service Tests', () => {
         assert.strictEqual(queuedMessages.length, 3);
 
         // Check delays: 5 minutes = 300 seconds
-        const snapshot1 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot1');
-        const snapshot2 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot2');
-        const snapshot3 = queuedMessages.find((m) => m.message.snapshotId === 'snapshot3');
+        const snapshot1 = queuedMessages.find((m) => m.message.path === 'snapshot1');
+        const snapshot2 = queuedMessages.find((m) => m.message.path === 'snapshot2');
+        const snapshot3 = queuedMessages.find((m) => m.message.path === 'snapshot3');
 
         assert.strictEqual(snapshot1.options.delaySeconds, 60); // 1 minute
         assert.strictEqual(snapshot2.options.delaySeconds, 180); // 3 minutes
@@ -336,7 +336,7 @@ describe('Cron Service Tests', () => {
         json: async () => ({
           'org1--site1': {},
           'org2--site2': {
-            snapshot1: '2025-01-01T10:00:00Z',
+            snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
           },
         }),
       });
@@ -350,7 +350,7 @@ describe('Cron Service Tests', () => {
 
         assert.strictEqual(result, true);
         assert.strictEqual(queuedMessages.length, 1);
-        assert.strictEqual(queuedMessages[0].message.snapshotId, 'snapshot1');
+        assert.strictEqual(queuedMessages[0].message.path, 'snapshot1');
       } finally {
         Date.now = originalDateNow;
       }
