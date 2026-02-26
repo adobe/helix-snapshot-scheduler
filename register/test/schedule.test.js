@@ -1029,7 +1029,9 @@ describe('hasPublishPermission Tests', () => {
     const { hasPublishPermission } = await import('../src/index.js');
 
     const originalFetch = global.fetch;
-    global.fetch = async () => { throw new Error('Network error'); };
+    global.fetch = async () => {
+      throw new Error('Network error');
+    };
 
     const result = await hasPublishPermission('token test-token', 'org1', 'site1', '/my-page');
     assert.strictEqual(result, false);
