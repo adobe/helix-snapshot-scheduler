@@ -641,6 +641,25 @@ describe('Schedule Time Validation Tests', () => {
   });
 });
 
+// Helper: mock fetch that grants publish permission on status API
+function mockFetchWithPublishPermission(extraHandler) {
+  return async (url, opts) => {
+    if (url.includes('admin.hlx.page/status/')) {
+      return {
+        ok: true,
+        json: async () => ({
+          live: { status: 200, permissions: ['read', 'write'] },
+        }),
+      };
+    }
+    if (extraHandler) {
+      const result = extraHandler(url, opts);
+      if (result) return result;
+    }
+    return { ok: true };
+  };
+}
+
 describe('SchedulePage API Tests', () => {
   it('should schedule a page successfully', async () => {
     const { schedulePage } = await import('../src/index.js');
@@ -648,11 +667,69 @@ describe('SchedulePage API Tests', () => {
     const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
 
     const originalFetch = global.fetch;
+    global.fetch = mockFetchWithPublishPermission();
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: validFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.path, '/my-page');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 401 when no Authorization header is provided', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: validFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    assert.strictEqual(response.status, 401);
+  });
+
+  it('should return 403 when user lacks publish permission', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    const originalFetch = global.fetch;
     global.fetch = async (url) => {
-      if (url.includes('admin.hlx.page/log')) {
-        return { ok: true };
+      if (url.includes('admin.hlx.page/status/')) {
+        return {
+          ok: true,
+          json: async () => ({
+            live: { status: 200, permissions: ['read'] },
+          }),
+        };
       }
-      return { ok: false };
+      return { ok: true };
     };
 
     const request = {
@@ -664,16 +741,46 @@ describe('SchedulePage API Tests', () => {
         userId: 'user@example.com',
       }),
       headers: {
-        get: (name) => (name === 'Origin' ? null : null),
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
     const response = await schedulePage(request, mockEnv);
-    const responseData = await response.json();
+    const errorHeader = response.headers.get('X-Error');
+    assert.strictEqual(response.status, 403);
+    assert.strictEqual(errorHeader, 'Forbidden: you do not have publish permission for this page');
 
-    assert.strictEqual(response.status, 200);
-    assert.strictEqual(responseData.success, true);
-    assert.strictEqual(responseData.path, '/my-page');
+    global.fetch = originalFetch;
+  });
+
+  it('should return 403 when status API returns non-ok', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/status/')) {
+        return { ok: false, status: 403, statusText: 'Forbidden' };
+      }
+      return { ok: true };
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        path: '/my-page',
+        scheduledPublish: validFutureDate.toISOString(),
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await schedulePage(request, mockEnv);
+    assert.strictEqual(response.status, 403);
 
     global.fetch = originalFetch;
   });
@@ -710,7 +817,7 @@ describe('SchedulePage API Tests', () => {
         userId: 'user@example.com',
       }),
       headers: {
-        get: () => null,
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -723,6 +830,9 @@ describe('SchedulePage API Tests', () => {
 
     const nearFutureDate = new Date(Date.now() + 3 * 60 * 1000);
 
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithPublishPermission();
+
     const request = {
       json: async () => ({
         org: 'org1',
@@ -732,7 +842,7 @@ describe('SchedulePage API Tests', () => {
         userId: 'user@example.com',
       }),
       headers: {
-        get: () => null,
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -740,12 +850,17 @@ describe('SchedulePage API Tests', () => {
     const errorHeader = response.headers.get('X-Error');
     assert.strictEqual(response.status, 400);
     assert.strictEqual(errorHeader, 'Scheduled publish must be at least 5 minutes in the future');
+
+    global.fetch = originalFetch;
   });
 
   it('should return 400 for scheduledPublish in the past', async () => {
     const { schedulePage } = await import('../src/index.js');
 
     const pastDate = new Date(Date.now() - 60 * 1000);
+
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithPublishPermission();
 
     const request = {
       json: async () => ({
@@ -756,7 +871,7 @@ describe('SchedulePage API Tests', () => {
         userId: 'user@example.com',
       }),
       headers: {
-        get: () => null,
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -764,10 +879,15 @@ describe('SchedulePage API Tests', () => {
     const errorHeader = response.headers.get('X-Error');
     assert.strictEqual(response.status, 400);
     assert.strictEqual(errorHeader, 'Scheduled publish is in the past');
+
+    global.fetch = originalFetch;
   });
 
   it('should return 400 for invalid scheduledPublish date', async () => {
     const { schedulePage } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithPublishPermission();
 
     const request = {
       json: async () => ({
@@ -778,12 +898,14 @@ describe('SchedulePage API Tests', () => {
         userId: 'user@example.com',
       }),
       headers: {
-        get: () => null,
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
     const response = await schedulePage(request, mockEnv);
     assert.strictEqual(response.status, 400);
+
+    global.fetch = originalFetch;
   });
 
   it('should store type: page entry in schedule.json', async () => {
@@ -793,7 +915,7 @@ describe('SchedulePage API Tests', () => {
     let storedSchedule = null;
 
     const originalFetch = global.fetch;
-    global.fetch = async () => ({ ok: true });
+    global.fetch = mockFetchWithPublishPermission();
 
     const mockEnvWithCapture = {
       ...mockEnv,
@@ -822,7 +944,7 @@ describe('SchedulePage API Tests', () => {
         userId: 'user@example.com',
       }),
       headers: {
-        get: () => null,
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
@@ -834,6 +956,104 @@ describe('SchedulePage API Tests', () => {
     assert.strictEqual(entry.type, 'page');
     assert.strictEqual(entry.userId, 'user@example.com');
     assert.strictEqual(entry.scheduledPublish, validFutureDate.toISOString());
+
+    global.fetch = originalFetch;
+  });
+});
+
+describe('hasPublishPermission Tests', () => {
+  it('should return true when live permissions include write', async () => {
+    const { hasPublishPermission } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        live: { status: 200, permissions: ['read', 'write'] },
+      }),
+    });
+
+    const result = await hasPublishPermission('token test-token', 'org1', 'site1', '/my-page');
+    assert.strictEqual(result, true);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return false when live permissions do not include write', async () => {
+    const { hasPublishPermission } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        live: { status: 200, permissions: ['read'] },
+      }),
+    });
+
+    const result = await hasPublishPermission('token test-token', 'org1', 'site1', '/my-page');
+    assert.strictEqual(result, false);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return false when status API returns non-ok', async () => {
+    const { hasPublishPermission } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({ ok: false, status: 404, statusText: 'Not Found' });
+
+    const result = await hasPublishPermission('token test-token', 'org1', 'site1', '/missing-page');
+    assert.strictEqual(result, false);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return false when live section is missing', async () => {
+    const { hasPublishPermission } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        preview: { status: 200, permissions: ['read', 'write'] },
+      }),
+    });
+
+    const result = await hasPublishPermission('token test-token', 'org1', 'site1', '/my-page');
+    assert.strictEqual(result, false);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return false when fetch throws an error', async () => {
+    const { hasPublishPermission } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => { throw new Error('Network error'); };
+
+    const result = await hasPublishPermission('token test-token', 'org1', 'site1', '/my-page');
+    assert.strictEqual(result, false);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should pass the auth token to the status API', async () => {
+    const { hasPublishPermission } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    let capturedHeaders = null;
+    global.fetch = async (url, opts) => {
+      capturedHeaders = opts.headers;
+      return {
+        ok: true,
+        json: async () => ({
+          live: { status: 200, permissions: ['read', 'write'] },
+        }),
+      };
+    };
+
+    await hasPublishPermission('token my-secret', 'org1', 'site1', '/my-page');
+    assert.strictEqual(capturedHeaders.Authorization, 'token my-secret');
 
     global.fetch = originalFetch;
   });

@@ -389,6 +389,29 @@ export async function getSchedule(request, env) {
   }
 }
 
+export async function hasPublishPermission(authToken, org, site, path) {
+  const statusUrl = `https://admin.hlx.page/status/${org}/${site}/main${path}`;
+  try {
+    const resp = await fetch(statusUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `${authToken}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!resp.ok) {
+      console.log('Status API returned non-ok for publish permission check:', resp.status, resp.statusText);
+      return false;
+    }
+    const data = await resp.json();
+    const permissions = data?.live?.permissions || [];
+    return permissions.includes('write');
+  } catch (err) {
+    console.error('Error checking publish permission:', err);
+    return false;
+  }
+}
+
 /**
  * Schedule a page for publishing
  * @param {Object} request - The incoming request
@@ -416,6 +439,18 @@ export async function schedulePage(request, env) {
     if (!apiKey) {
       console.log('Schedule Page Request: No API key found');
       return createErrorResponse('Org/site not registered', request, 404);
+    }
+
+    // Check the user has publish permission for this path
+    const authToken = request.headers.get('Authorization');
+    if (!authToken) {
+      console.log('Schedule Page Request: No authorization token found');
+      return createErrorResponse('Unauthorized', request, 401);
+    }
+    const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
+    if (!canPublish) {
+      console.log(`Schedule Page Request: User does not have publish permission for ${normalizedPath}`);
+      return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
     }
 
     // Validate scheduledPublish is a valid date >= 5 minutes in future
