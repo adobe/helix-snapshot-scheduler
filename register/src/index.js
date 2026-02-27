@@ -505,7 +505,7 @@ export async function schedulePage(request, env) {
     const auditLogResponse = await fetch(`https://admin.hlx.page/log/${org}/${site}/main`, {
       method: 'POST',
       headers: {
-        Authorization: `token ${apiKey}`,
+        Authorization: `${authToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
