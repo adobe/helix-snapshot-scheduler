@@ -26,12 +26,6 @@ function getAllowedOrigins() {
     'http://localhost:3000',
     'http://localhost:6456',
   ];
-
-  // // Only allow localhost in CI environment for development/testing
-  // if (globalEnv?.ENVIRONMENT === 'ci') {
-  //   return [...baseOrigins, 'http://localhost:3000', 'http://localhost:6456'];
-  // }
-
   return baseOrigins;
 }
 
