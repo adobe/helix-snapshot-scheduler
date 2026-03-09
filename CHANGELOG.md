@@ -1,3 +1,17 @@
+# [1.2.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.4...v1.2.0) (2026-03-09)
+
+
+### Bug Fixes
+
+* add publish permissions check ([b778088](https://github.com/adobe/helix-snapshot-scheduler/commit/b7780886cc06077bc2732a7a34246ac3c97757ac))
+* audit log ([f0d6e52](https://github.com/adobe/helix-snapshot-scheduler/commit/f0d6e52d1098e3c42f4a0286f334fd15240d3bce))
+* use user auth token to make log call ([6887a07](https://github.com/adobe/helix-snapshot-scheduler/commit/6887a0760d96f74105fe713ba20ecbf30764333d))
+
+
+### Features
+
+* handle single page scheduling ([087a241](https://github.com/adobe/helix-snapshot-scheduler/commit/087a241f2ea8f58f41de7903bc63b29256afca3b))
+
 ## [1.1.4](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.3...v1.1.4) (2025-12-18)
 
 
