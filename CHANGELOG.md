@@ -1,3 +1,16 @@
+# [1.3.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.2.0...v1.3.0) (2026-03-09)
+
+
+### Bug Fixes
+
+* allow calls to get schedule ([6163b16](https://github.com/adobe/helix-snapshot-scheduler/commit/6163b162d43796ccc02adf95b3189cbf07e9ed96))
+* cleanup response formatting ([b0df1cc](https://github.com/adobe/helix-snapshot-scheduler/commit/b0df1cca50959881d04912dd3dd9e825a6c17d7a))
+
+
+### Features
+
+* get schedule for a single path ([667f5df](https://github.com/adobe/helix-snapshot-scheduler/commit/667f5dfe7235368b1625f36f367deb878a198818))
+
 # [1.2.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.1.4...v1.2.0) (2026-03-09)
 
 
