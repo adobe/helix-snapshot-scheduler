@@ -337,7 +337,10 @@ export async function updateSchedule(request, env) {
 }
 
 /**
- * Get the schedule data for a specific org/site or all schedules
+ * Get the schedule data for a specific org/site.
+ * When a `path` query parameter is provided, returns whether that path is
+ * scheduled and, if so, its scheduledPublish time and userId.
+ * Without the query parameter, returns the full schedule for the org/site.
  * @param {Object} request - The incoming request
  * @param {Object} env - The environment object
  */
@@ -345,16 +348,15 @@ export async function getSchedule(request, env) {
   try {
     const { org, site } = request.params;
     if (!org || !site) {
-      return createErrorResponse('Invalid org or site', null, 400);
+      return createErrorResponse('Invalid org or site', request, 400);
     }
-    // Check authorization if specific org/site requested
     const authToken = request.headers.get('Authorization');
     if (!authToken) {
-      return createErrorResponse('Unauthorized', null, 401);
+      return createErrorResponse('Unauthorized', request, 401);
     }
     const authorized = await isAuthorized(authToken, org, site, false);
     if (!authorized) {
-      return createErrorResponse('Unauthorized', null, 401);
+      return createErrorResponse('Unauthorized', request, 401);
     }
 
     let scheduleData = {};
@@ -365,21 +367,46 @@ export async function getSchedule(request, env) {
       }
     } catch (err) {
       console.warn('Could not read schedule data:', err);
-      return createErrorResponse('Could not retrieve schedule data', null, 500);
+      return createErrorResponse('Could not retrieve schedule data', request, 500);
     }
+
     const orgSiteKey = `${org}--${site}`;
     const orgSiteData = scheduleData[orgSiteKey] || {};
-    return new Response(JSON.stringify({
+
+    const queryPath = request.query?.path;
+    if (queryPath) {
+      const normalizedPath = queryPath.startsWith('/') ? queryPath : `/${queryPath}`;
+      const entry = orgSiteData[normalizedPath];
+      if (!entry) {
+        return createResponse(JSON.stringify({
+          scheduled: false,
+          path: normalizedPath,
+        }), request, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return createResponse(JSON.stringify({
+        scheduled: true,
+        path: normalizedPath,
+        scheduledPublish: entry.scheduledPublish,
+        userId: entry.userId,
+        type: entry.type,
+      }), request, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return createResponse(JSON.stringify({
       [orgSiteKey]: orgSiteData,
-    }), {
+    }), request, {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Get schedule failed: ', request, err);
-    return createErrorResponse('Get schedule failed: Internal server error', null, 500);
+    return createErrorResponse('Get schedule failed: Internal server error', request, 500);
   }
 }
 
@@ -539,6 +566,7 @@ const router = IttyRouter();
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
 router.options('/register/:org/:site', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));

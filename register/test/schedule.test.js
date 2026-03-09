@@ -397,7 +397,200 @@ describe('IsRegistered API Tests', () => {
   });
 });
 
-// GetSchedule API Tests removed - function is commented out in implementation
+describe('GetSchedule API Tests', () => {
+  it('should return full schedule for org/site when no path query param', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+        return { ok: true };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      query: {},
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await getSchedule(request, mockEnv);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert(responseData['org1--site1'], 'Should contain org--site key');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return scheduled: true with details when path is scheduled', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const scheduledDate = '2025-06-15T12:00:00Z';
+    const mockEnvWithPage = {
+      ...mockEnv,
+      R2_BUCKET: {
+        ...mockEnv.R2_BUCKET,
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  '/blog/my-article': {
+                    scheduledPublish: scheduledDate,
+                    userId: 'author@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+      },
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+        return { ok: true };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      query: { path: '/blog/my-article' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await getSchedule(request, mockEnvWithPage);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.scheduled, true);
+    assert.strictEqual(responseData.path, '/blog/my-article');
+    assert.strictEqual(responseData.scheduledPublish, scheduledDate);
+    assert.strictEqual(responseData.userId, 'author@example.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return scheduled: false when path is not scheduled', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+        return { ok: true };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      query: { path: '/nonexistent-page' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await getSchedule(request, mockEnv);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.scheduled, false);
+    assert.strictEqual(responseData.path, '/nonexistent-page');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should normalize path without leading slash', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const scheduledDate = '2025-06-15T12:00:00Z';
+    const mockEnvWithPage = {
+      ...mockEnv,
+      R2_BUCKET: {
+        ...mockEnv.R2_BUCKET,
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  '/my-page': {
+                    scheduledPublish: scheduledDate,
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+      },
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+        return { ok: true };
+      }
+      return { ok: false };
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      query: { path: 'my-page' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await getSchedule(request, mockEnvWithPage);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.scheduled, true);
+    assert.strictEqual(responseData.path, '/my-page');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 401 when no authorization token', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      query: {},
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await getSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 401);
+  });
+
+  it('should return 400 for missing org or site', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'org1' },
+      query: {},
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await getSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 400);
+  });
+});
 
 describe('Schedule Time Validation Tests', () => {
   it('should return 400 for scheduled publish less than 5 minutes in the future', async () => {
