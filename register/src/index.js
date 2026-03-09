@@ -348,16 +348,15 @@ export async function getSchedule(request, env) {
   try {
     const { org, site } = request.params;
     if (!org || !site) {
-      return createErrorResponse('Invalid org or site', null, 400);
+      return createErrorResponse('Invalid org or site', request, 400);
     }
-    // Check authorization if specific org/site requested
     const authToken = request.headers.get('Authorization');
     if (!authToken) {
-      return createErrorResponse('Unauthorized', null, 401);
+      return createErrorResponse('Unauthorized', request, 401);
     }
     const authorized = await isAuthorized(authToken, org, site, false);
     if (!authorized) {
-      return createErrorResponse('Unauthorized', null, 401);
+      return createErrorResponse('Unauthorized', request, 401);
     }
 
     let scheduleData = {};
@@ -368,7 +367,7 @@ export async function getSchedule(request, env) {
       }
     } catch (err) {
       console.warn('Could not read schedule data:', err);
-      return createErrorResponse('Could not retrieve schedule data', null, 500);
+      return createErrorResponse('Could not retrieve schedule data', request, 500);
     }
 
     const orgSiteKey = `${org}--${site}`;
@@ -379,34 +378,35 @@ export async function getSchedule(request, env) {
       const normalizedPath = queryPath.startsWith('/') ? queryPath : `/${queryPath}`;
       const entry = orgSiteData[normalizedPath];
       if (!entry) {
-        return new Response(JSON.stringify({
+        return createResponse(JSON.stringify({
           scheduled: false,
           path: normalizedPath,
-        }), {
+        }), request, {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return new Response(JSON.stringify({
+      return createResponse(JSON.stringify({
         scheduled: true,
         path: normalizedPath,
         scheduledPublish: entry.scheduledPublish,
         userId: entry.userId,
-      }), {
+        type: entry.type,
+      }), request, {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    return new Response(JSON.stringify({
+    return createResponse(JSON.stringify({
       [orgSiteKey]: orgSiteData,
-    }), {
+    }), request, {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Get schedule failed: ', request, err);
-    return createErrorResponse('Get schedule failed: Internal server error', null, 500);
+    return createErrorResponse('Get schedule failed: Internal server error', request, 500);
   }
 }
 
