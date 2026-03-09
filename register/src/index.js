@@ -337,7 +337,10 @@ export async function updateSchedule(request, env) {
 }
 
 /**
- * Get the schedule data for a specific org/site or all schedules
+ * Get the schedule data for a specific org/site.
+ * When a `path` query parameter is provided, returns whether that path is
+ * scheduled and, if so, its scheduledPublish time and userId.
+ * Without the query parameter, returns the full schedule for the org/site.
  * @param {Object} request - The incoming request
  * @param {Object} env - The environment object
  */
@@ -367,15 +370,39 @@ export async function getSchedule(request, env) {
       console.warn('Could not read schedule data:', err);
       return createErrorResponse('Could not retrieve schedule data', null, 500);
     }
+
     const orgSiteKey = `${org}--${site}`;
     const orgSiteData = scheduleData[orgSiteKey] || {};
+
+    const queryPath = request.query?.path;
+    if (queryPath) {
+      const normalizedPath = queryPath.startsWith('/') ? queryPath : `/${queryPath}`;
+      const entry = orgSiteData[normalizedPath];
+      if (!entry) {
+        return new Response(JSON.stringify({
+          scheduled: false,
+          path: normalizedPath,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({
+        scheduled: true,
+        path: normalizedPath,
+        scheduledPublish: entry.scheduledPublish,
+        userId: entry.userId,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({
       [orgSiteKey]: orgSiteData,
     }), {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Get schedule failed: ', request, err);
