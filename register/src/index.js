@@ -26,12 +26,6 @@ function getAllowedOrigins() {
     'http://localhost:3000',
     'http://localhost:6456',
   ];
-
-  // // Only allow localhost in CI environment for development/testing
-  // if (globalEnv?.ENVIRONMENT === 'ci') {
-  //   return [...baseOrigins, 'http://localhost:3000', 'http://localhost:6456'];
-  // }
-
   return baseOrigins;
 }
 
@@ -314,6 +308,7 @@ export async function updateSchedule(request, env) {
 
     // Update the schedule with the new snapshot
     scheduleData[orgSiteKey][snapshotId] = {
+      type: 'snapshot',
       scheduledPublish,
       approved,
     };
@@ -388,16 +383,167 @@ export async function getSchedule(request, env) {
   }
 }
 
+export async function hasPublishPermission(authToken, org, site, path) {
+  const statusUrl = `https://admin.hlx.page/status/${org}/${site}/main${path}`;
+  try {
+    const resp = await fetch(statusUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `${authToken}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!resp.ok) {
+      console.log('Status API returned non-ok for publish permission check:', resp.status, resp.statusText);
+      return false;
+    }
+    const data = await resp.json();
+    const permissions = data?.live?.permissions || [];
+    console.log('User permissions for this page:', path, 'Permissions:', permissions);
+    return permissions.includes('write');
+  } catch (err) {
+    console.error('Error checking publish permission:', err);
+    return false;
+  }
+}
+
+/**
+ * Schedule a page for publishing
+ * @param {Object} request - The incoming request
+ * @param {Object} env - The environment object
+ */
+export async function schedulePage(request, env) {
+  try {
+    const data = await request.json();
+    if (!data) {
+      console.log('Schedule Page Request: Invalid body. Please provide org, site, path, scheduledPublish, and userId');
+      return createErrorResponse('Invalid body. Please provide org, site, path, scheduledPublish, and userId', request, 400);
+    }
+
+    const {
+      org, site, path, scheduledPublish, userId,
+    } = data;
+    if (!org || !site || !path || !scheduledPublish || !userId) {
+      console.log('Schedule Page Request: Invalid body. Please provide org, site, path, scheduledPublish, and userId');
+      return createErrorResponse('Invalid body. Please provide org, site, path, scheduledPublish, and userId', request, 400);
+    }
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+    // Check org/site is registered
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
+      console.log('Schedule Page Request: No API key found');
+      return createErrorResponse('Org/site not registered', request, 404);
+    }
+
+    // Check the user has publish permission for this path
+    const authToken = request.headers.get('Authorization');
+    if (!authToken) {
+      console.log('Schedule Page Request: No authorization token found');
+      return createErrorResponse('Unauthorized', request, 401);
+    }
+    const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
+    if (!canPublish) {
+      console.log(`Schedule Page Request: User does not have publish permission for ${normalizedPath}`);
+      return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
+    }
+
+    // Validate scheduledPublish is a valid date >= 5 minutes in future
+    const scheduledDate = new Date(scheduledPublish);
+    if (Number.isNaN(scheduledDate.getTime())) {
+      console.log('Schedule Page Request: Invalid scheduledPublish date format. Please provide a valid ISO date string');
+      return createErrorResponse('Invalid scheduledPublish date format. Please provide a valid ISO date string', request, 400);
+    }
+
+    const now = new Date();
+    const minimumTime = new Date(now.getTime() + 5 * 60 * 1000);
+
+    if (scheduledDate < minimumTime) {
+      const errorMessage = scheduledDate < now
+        ? 'Scheduled publish is in the past'
+        : 'Scheduled publish must be at least 5 minutes in the future';
+      console.log(`Schedule Page Request: ${errorMessage}. Scheduled: ${scheduledPublish}, Minimum allowed: ${minimumTime.toISOString()}`);
+      return createErrorResponse(errorMessage, request, 400);
+    }
+
+    // Read existing schedule data
+    let scheduleData = {};
+    try {
+      const existingSchedule = await env.R2_BUCKET.get('schedule.json');
+      if (existingSchedule) {
+        scheduleData = await existingSchedule.json();
+      }
+    } catch (err) {
+      console.warn('Could not read existing schedule data:', err);
+    }
+
+    // Ensure the structure exists
+    const orgSiteKey = `${org}--${site}`;
+    if (!scheduleData[orgSiteKey]) {
+      scheduleData[orgSiteKey] = {};
+    }
+
+    // Update the schedule with the new page entry
+    scheduleData[orgSiteKey][normalizedPath] = {
+      type: 'page',
+      scheduledPublish,
+      userId,
+    };
+
+    // Store the updated schedule back to R2
+    await env.R2_BUCKET.put('schedule.json', JSON.stringify(scheduleData, null, 2));
+
+    console.log(`Page schedule updated for ${orgSiteKey}: ${normalizedPath} -> ${scheduledPublish}`);
+
+    // add an entry to the audit log
+    const auditLogResponse = await fetch(`https://admin.hlx.page/log/${org}/${site}/main`, {
+      method: 'POST',
+      headers: {
+        Authorization: `${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        entries: [{
+          timestamp: Date.now(),
+          route: 'scheduled-publish',
+          path: normalizedPath,
+          user: userId,
+        }],
+      }),
+    }).catch((err) => console.error('Failed to post audit log:', err));
+    if (auditLogResponse && !auditLogResponse.ok) {
+      console.error('Failed to post audit log:', auditLogResponse.status, auditLogResponse.statusText);
+    }
+    return createResponse(JSON.stringify({
+      success: true,
+      message: `Page schedule updated for ${org}/${site}`,
+      org,
+      site,
+      path: normalizedPath,
+    }), request, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (err) {
+    console.error('Schedule page failed: ', request, err);
+    return createErrorResponse('Schedule page failed: Internal server error', request, 500);
+  }
+}
+
 // Create a new router
 const router = IttyRouter();
 
 // Handle preflight OPTIONS requests for browser endpoints only
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
 router.options('/register/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
 router.post('/schedule', async (request, env) => updateSchedule(request, env));
+router.post('/schedule/page', async (request, env) => schedulePage(request, env));
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
 router.all('*', () => createErrorResponse('404, not found!', null, 404));

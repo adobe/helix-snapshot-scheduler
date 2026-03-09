@@ -97,9 +97,41 @@ async function publishSnapshot(env, org, site, snapshotId, approved) {
 }
 
 /**
+ * Publish a page by calling the AEM Admin API
+ * @param {Object} env - The environment object
+ * @param {string} org - The organization
+ * @param {string} site - The site
+ * @param {string} path - The page path
+ * @returns {Promise<boolean>} - Success status
+ */
+async function publishPage(env, org, site, path) {
+  try {
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
+      console.log('Publish Page Worker: No API token found');
+      throw new Error('Org/Site not registered');
+    }
+    console.log('Publish Page Worker: publishing page', org, site, path);
+    const res = await fetch(`${ADMIN_API_BASE}/live/${org}/${site}/${MAIN_BRANCH}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `token ${apiKey}` },
+    });
+    if (res.status >= 400) {
+      console.error('Publish Page Worker: failed to publish page', org, site, path, res.status, res.statusText);
+      return false;
+    }
+    console.log('Publish Page Worker: successfully published page', org, site, path, res.status, res.statusText);
+    return true;
+  } catch (error) {
+    console.error(`Failed to publish page ${path}:`, error.message);
+    return false;
+  }
+}
+
+/**
  * Batch move completed snapshots to completed folder (single R2 write operation)
  * @param {Object} env - The environment object
- * @param {Array} snapshots - Array of {org, site, snapshotId, scheduledPublish, publishedAt}
+ * @param {Array} snapshots - Array of {org, site, path, scheduledPublish, publishedAt}
  * @returns {Promise<void>}
  */
 async function batchMoveToCompleted(env, snapshots) {
@@ -122,10 +154,10 @@ async function batchMoveToCompleted(env, snapshots) {
     completedSnapshots.push({
       org: snapshot.org,
       site: snapshot.site,
-      snapshotId: snapshot.snapshotId,
+      path: snapshot.path,
       scheduledPublish: snapshot.scheduledPublish,
       publishedAt: snapshot.publishedAt,
-      publishedBy: 'scheduled-snapshot-publisher',
+      publishedBy: snapshot.type === 'page' ? 'scheduled-page-publisher' : 'scheduled-snapshot-publisher',
     });
   }
 
@@ -136,7 +168,7 @@ async function batchMoveToCompleted(env, snapshots) {
 /**
  * Batch update scheduled.json to remove multiple published snapshots (single R2 read + write)
  * @param {Object} env - The environment object
- * @param {Array} snapshots - Array of {org, site, snapshotId}
+ * @param {Array} snapshots - Array of {org, site, path}
  * @returns {Promise<void>}
  */
 async function batchUpdateScheduledJson(env, snapshots) {
@@ -150,19 +182,19 @@ async function batchUpdateScheduledJson(env, snapshots) {
 
     const schedule = await scheduleData.json();
 
-    // Remove all published snapshots from schedule
+    // Remove all published entries from schedule
     for (const snapshot of snapshots) {
       const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
 
-      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.snapshotId]) {
-        delete schedule[orgSiteKey][snapshot.snapshotId];
+      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.path]) {
+        delete schedule[orgSiteKey][snapshot.path];
 
-        // If no more snapshots for this org-site, remove the entire entry
+        // If no more entries for this org-site, remove the entire entry
         if (Object.keys(schedule[orgSiteKey]).length === 0) {
           delete schedule[orgSiteKey];
         }
       } else {
-        console.warn(`Snapshot ${snapshot.snapshotId} not found in scheduled.json for ${orgSiteKey}`);
+        console.warn(`Entry ${snapshot.path} not found in scheduled.json for ${orgSiteKey}`);
       }
     }
     await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
@@ -175,42 +207,49 @@ async function batchUpdateScheduledJson(env, snapshots) {
 export default {
   async queue(batch, env) {
     const publishedSnapshots = [];
-    // Step 1: Publish all snapshots in the batch
+    // Step 1: Publish all snapshots/pages in the batch
     for (const msg of batch.messages) {
-      console.log('Publish Snapshot Worker: processing message');
+      console.log('Publish Worker: processing message');
       console.log(`Message retry count: ${msg.attempts || 0}`);
       const {
         org,
         site,
-        snapshotId,
         scheduledPublish,
         approved = false,
+        type = 'snapshot',
+        userId,
       } = msg.body;
+      // backward compat: support in-flight messages that still use snapshotId
+      const path = msg.body.path ?? msg.body.snapshotId;
 
       try {
-        // Publish the snapshot
-        const publishSuccess = await publishSnapshot(env, org, site, snapshotId, approved);
+        // Publish the snapshot or page
+        const publishSuccess = type === 'page'
+          ? await publishPage(env, org, site, path)
+          : await publishSnapshot(env, org, site, path, approved);
 
         if (!publishSuccess) {
           // Publish failed - throw error to trigger queue retry for entire batch
-          const error = new Error(`Failed to publish snapshot ${snapshotId} for ${org}/${site}`);
+          const error = new Error(`Failed to publish ${type} ${path} for ${org}/${site}`);
           console.error(error.message);
           throw error;
         }
 
-        // Track successfully published snapshot with publish timestamp
+        // Track successfully published entry with publish timestamp
         publishedSnapshots.push({
           org,
           site,
-          snapshotId,
+          path,
           scheduledPublish,
           approved,
+          type,
+          userId,
           publishedAt: new Date().toISOString(), // Capture exact publish time
         });
 
-        console.log(`Successfully published snapshot ${snapshotId} for ${org}/${site}`);
+        console.log(`Successfully published ${type} ${path} for ${org}/${site}`);
       } catch (err) {
-        console.error(`Publish Snapshot Worker failed (attempt ${msg.attempts || 1}):`, org, site, snapshotId, err.message);
+        console.error(`Publish Worker failed (attempt ${msg.attempts || 1}):`, org, site, path, err.message);
         // Re-throw to signal failure and trigger automatic retry by Cloudflare Queues
         throw err;
       }
@@ -236,6 +275,6 @@ export default {
       }
     }
 
-    console.log(`Successfully processed ${publishedSnapshots.length} snapshots`);
+    console.log(`Successfully processed ${publishedSnapshots.length} entries`);
   },
 };

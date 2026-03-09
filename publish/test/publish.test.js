@@ -54,11 +54,11 @@ describe('Publish Snapshot Service Tests', () => {
           return {
             json: async () => ({
               'org1--site1': {
-                snapshot1: '2025-01-01T10:00:00Z',
-                snapshot2: '2025-01-01T11:00:00Z',
+                snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
+                snapshot2: { scheduledPublish: '2025-01-01T11:00:00Z', approved: false },
               },
               'org2--site2': {
-                snapshot3: '2025-01-01T12:00:00Z',
+                snapshot3: { scheduledPublish: '2025-01-01T12:00:00Z', approved: false },
               },
             }),
           };
@@ -69,7 +69,7 @@ describe('Publish Snapshot Service Tests', () => {
               {
                 org: 'org1',
                 site: 'site1',
-                snapshotId: 'previous-snapshot',
+                path: 'previous-snapshot',
                 scheduledPublish: '2025-01-01T09:00:00Z',
                 publishedAt: '2025-01-01T09:00:00Z',
                 publishedBy: 'scheduled-snapshot-publisher',
@@ -85,9 +85,9 @@ describe('Publish Snapshot Service Tests', () => {
     // Mock KV namespace
     const mockKV = {
       get: async (key) => {
-        // Return mock API tokens for testing
-        if (key.endsWith('--apiToken')) {
-          return 'test-api-token';
+        // Return mock API key for testing
+        if (key.endsWith('--apiKey')) {
+          return 'test-api-key';
         }
         return null;
       },
@@ -130,7 +130,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -155,7 +155,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -186,7 +186,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -197,7 +197,7 @@ describe('Publish Snapshot Service Tests', () => {
       // Verify snapshot was removed from schedule
       assert(updatedSchedule, 'Schedule should be updated');
       assert.strictEqual(updatedSchedule['org1--site1'].snapshot1, undefined);
-      assert.strictEqual(updatedSchedule['org1--site1'].snapshot2, '2025-01-01T11:00:00Z');
+      assert(updatedSchedule['org1--site1'].snapshot2, 'snapshot2 should remain in schedule');
     });
 
     it('should remove entire org-site entry when no snapshots remain', async () => {
@@ -215,7 +215,7 @@ describe('Publish Snapshot Service Tests', () => {
           return {
             json: async () => ({
               'org1--site1': {
-                snapshot1: '2025-01-01T10:00:00Z',
+                snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
               },
             }),
           };
@@ -230,7 +230,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -253,7 +253,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -274,7 +274,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'nonexistent-snapshot',
+            path: 'nonexistent-snapshot',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -306,7 +306,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -318,11 +318,11 @@ describe('Publish Snapshot Service Tests', () => {
       assert(completedData, 'Completed data should be stored');
       assert.strictEqual(completedData.length, 2); // Previous + new
 
-      const newSnapshot = completedData.find((s) => s.snapshotId === 'snapshot1');
+      const newSnapshot = completedData.find((s) => s.path === 'snapshot1');
       assert(newSnapshot, 'New snapshot should be in completed data');
       assert.strictEqual(newSnapshot.org, 'org1');
       assert.strictEqual(newSnapshot.site, 'site1');
-      assert.strictEqual(newSnapshot.snapshotId, 'snapshot1');
+      assert.strictEqual(newSnapshot.path, 'snapshot1');
       assert.strictEqual(newSnapshot.scheduledPublish, '2025-01-01T10:00:00Z');
       assert.strictEqual(newSnapshot.publishedBy, 'scheduled-snapshot-publisher');
       assert(newSnapshot.publishedAt, 'PublishedAt should be set');
@@ -345,7 +345,7 @@ describe('Publish Snapshot Service Tests', () => {
           return {
             json: async () => ({
               'org1--site1': {
-                snapshot1: '2025-01-01T10:00:00Z',
+                snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
               },
             }),
           };
@@ -360,7 +360,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -371,7 +371,7 @@ describe('Publish Snapshot Service Tests', () => {
       // Verify new completed data was created
       assert(completedData, 'Completed data should be created');
       assert.strictEqual(completedData.length, 1);
-      assert.strictEqual(completedData[0].snapshotId, 'snapshot1');
+      assert.strictEqual(completedData[0].path, 'snapshot1');
     });
   });
 
@@ -398,7 +398,7 @@ describe('Publish Snapshot Service Tests', () => {
             body: {
               org: 'org1',
               site: 'site1',
-              snapshotId: 'snapshot1',
+              path: 'snapshot1',
               scheduledPublish: '2025-01-01T10:00:00Z',
             },
           },
@@ -406,7 +406,7 @@ describe('Publish Snapshot Service Tests', () => {
             body: {
               org: 'org2',
               site: 'site2',
-              snapshotId: 'snapshot3',
+              path: 'snapshot3',
               scheduledPublish: '2025-01-01T10:00:00Z',
             },
           },
@@ -450,7 +450,7 @@ describe('Publish Snapshot Service Tests', () => {
             body: {
               org: 'org1',
               site: 'site1',
-              snapshotId: 'snapshot1',
+              path: 'snapshot1',
               scheduledPublish: '2025-01-01T10:00:00Z',
             },
           },
@@ -458,7 +458,7 @@ describe('Publish Snapshot Service Tests', () => {
             body: {
               org: 'org2',
               site: 'site2',
-              snapshotId: 'snapshot3',
+              path: 'snapshot3',
               scheduledPublish: '2025-01-01T10:00:00Z',
             },
           },
@@ -496,7 +496,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -526,7 +526,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -551,7 +551,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -583,7 +583,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -609,7 +609,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'testorg',
             site: 'testsite',
-            snapshotId: 'snap1',
+            path: 'snap1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -633,7 +633,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snap1',
+            path: 'snap1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
@@ -654,7 +654,7 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            snapshotId: 'snapshot1',
+            path: 'snapshot1',
             scheduledPublish: 'invalid-date',
           },
         }],
@@ -662,6 +662,106 @@ describe('Publish Snapshot Service Tests', () => {
 
       // Should not throw error
       await worker.queue(batch, mockEnv);
+    });
+
+    it('should support backward-compat snapshotId field in message body', async () => {
+      const { default: worker } = await import('../src/index.js');
+
+      const batch = {
+        messages: [{
+          body: {
+            org: 'org1',
+            site: 'site1',
+            snapshotId: 'snapshot1', // old field name - backward compat
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        }],
+      };
+
+      // Should not throw - backward compat with snapshotId
+      await worker.queue(batch, mockEnv);
+    });
+  });
+
+  describe('publishPage function', () => {
+    it('should successfully publish a page via live API', async () => {
+      global.fetch = async (url, options) => {
+        if (url.includes('/live/') && options.method === 'POST') {
+          return { ok: true, status: 200, statusText: 'OK' };
+        }
+        throw new Error('Unexpected fetch call');
+      };
+
+      const { default: worker } = await import('../src/index.js');
+
+      const batch = {
+        messages: [{
+          body: {
+            org: 'org1',
+            site: 'site1',
+            path: '/my-page',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+            type: 'page',
+            userId: 'user@example.com',
+          },
+        }],
+      };
+
+      // Should not throw
+      await worker.queue(batch, mockEnv);
+    });
+
+    it('should throw error when page publish API returns 4xx', async () => {
+      global.fetch = async (url) => {
+        if (url.includes('/live/')) {
+          return { ok: false, status: 403, statusText: 'Forbidden' };
+        }
+        throw new Error('Unexpected fetch call');
+      };
+
+      const { default: worker } = await import('../src/index.js');
+
+      const batch = {
+        messages: [{
+          body: {
+            org: 'org1',
+            site: 'site1',
+            path: '/my-page',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+            type: 'page',
+            userId: 'user@example.com',
+          },
+        }],
+      };
+
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Failed to publish page \/my-page for org1\/site1/,
+      );
+    });
+
+    it('should throw error when page publish API token is missing', async () => {
+      mockEnv.SCHEDULER_KV.get = async () => null;
+
+      const { default: worker } = await import('../src/index.js');
+
+      const batch = {
+        messages: [{
+          body: {
+            org: 'org1',
+            site: 'site1',
+            path: '/my-page',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+            type: 'page',
+            userId: 'user@example.com',
+          },
+        }],
+      };
+
+      await assert.rejects(
+        () => worker.queue(batch, mockEnv),
+        /Org\/Site not registered|Failed to publish page/,
+      );
     });
   });
 });

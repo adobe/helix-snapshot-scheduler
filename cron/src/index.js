@@ -39,27 +39,34 @@ async function getScheduledSnapshots(env) {
       continue;
     }
 
-    // Check each snapshot for this org-site
-    for (const [snapshotId, snapshotData] of Object.entries(snapshots)) {
+    // Check each snapshot/page for this org-site
+    for (const [path, snapshotData] of Object.entries(snapshots)) {
       try {
-        const { scheduledPublish: scheduledPublishStr, approved = false } = snapshotData;
+        const {
+          scheduledPublish: scheduledPublishStr,
+          approved = false,
+          type = 'snapshot',
+          userId = null,
+        } = snapshotData;
         const scheduledPublish = new Date(scheduledPublishStr).getTime();
-        // Check if this snapshot is due to be published in the next 5 minutes
+        // Check if this entry is due to be published in the next 5 minutes
         if (scheduledPublish <= lookaheadEnd) {
           const delaySeconds = Math.max(0, Math.ceil((scheduledPublish - now) / 1000));
           snapshotsToPublish.push({
             org,
             site,
-            snapshotId,
+            path,
             scheduledPublish: scheduledPublishStr,
             approved,
+            type,
+            userId,
             delaySeconds, // Ensure non-negative delay
           });
 
-          console.log(`Scheduling snapshot ${snapshotId} for ${org}/${site} with ${delaySeconds}s delay`);
+          console.log(`Scheduling ${type} ${path} for ${org}/${site} with ${delaySeconds}s delay`);
         }
       } catch (err) {
-        console.error(`Invalid scheduled publish date for ${orgSiteKey}/${snapshotId}:`, snapshotData, err);
+        console.error(`Invalid scheduled publish date for ${orgSiteKey}/${path}:`, snapshotData, err);
       }
     }
   }
@@ -76,24 +83,24 @@ export default {
         console.log('No snapshots scheduled for publishing in the next 5 minutes');
         return true;
       }
-      console.log(`Found ${snapshotsToPublish.length} snapshots to schedule for publishing`);
+      console.log(`Found ${snapshotsToPublish.length} entries to schedule for publishing`);
       // Queue each snapshot for publishing with the appropriate delay
       const queuePromises = snapshotsToPublish.map(async (snapshot) => {
         try {
           await env.PUBLISH_QUEUE.send(snapshot, {
             delaySeconds: snapshot.delaySeconds,
           });
-          console.log(`Queued snapshot ${snapshot.snapshotId} for ${snapshot.org}/${snapshot.site} with ${snapshot.delaySeconds}s delay`);
+          console.log(`Queued ${snapshot.type} ${snapshot.path} for ${snapshot.org}/${snapshot.site} with ${snapshot.delaySeconds}s delay`);
           return { success: true, snapshot };
         } catch (error) {
-          console.error(`Failed to queue snapshot ${snapshot.snapshotId} for ${snapshot.org}/${snapshot.site}:`, error);
+          console.error(`Failed to queue ${snapshot.type} ${snapshot.path} for ${snapshot.org}/${snapshot.site}:`, error);
           return { success: false, snapshot, error };
         }
       });
 
       const results = await Promise.all(queuePromises);
       const successCount = results.filter((r) => r.success).length;
-      console.log(`Successfully queued ${successCount}/${snapshotsToPublish.length} snapshots for publishing`);
+      console.log(`Successfully queued ${successCount}/${snapshotsToPublish.length} entries for publishing`);
       return true;
     } catch (error) {
       console.error('Error in scheduled function:', error);
