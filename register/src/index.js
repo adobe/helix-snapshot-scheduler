@@ -246,12 +246,12 @@ export async function updateSchedule(request, env) {
   try {
     const data = await request.json();
     if (!data) {
-      console.log('Update Schedule Request: Invalid body. Please provide org, site, snapshotId, and scheduledPublish');
-      return createErrorResponse('Invalid body. Please provide org, site, snapshotId, and scheduledPublish', request, 400);
+      console.log('Update Schedule Request: Invalid body. Please provide org, site and snapshotId');
+      return createErrorResponse('Invalid body. Please provide org, site and snapshotId', request, 400);
     }
 
     const {
-      org, site, snapshotId, approved = false,
+      org, site, snapshotId, approved = false, userId,
     } = data;
     if (!org || !site || !snapshotId) {
       console.log('Update Schedule Request: Invalid body. Please provide org, site and snapshotId');
@@ -311,6 +311,7 @@ export async function updateSchedule(request, env) {
       type: 'snapshot',
       scheduledPublish,
       approved,
+      ...(userId && { userId }),
     };
 
     // Store the updated schedule back to R2

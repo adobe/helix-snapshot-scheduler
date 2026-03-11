@@ -82,13 +82,12 @@ global.fetch = async (url) => {
 };
 
 describe('Schedule API Tests', () => {
-  it('should update schedule successfully', async () => {
+  it('should persist userId in schedule.json when provided', async () => {
     const { updateSchedule } = await import('../src/index.js');
 
-    // Create a valid future date (10 minutes from now)
     const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+    let storedSchedule = null;
 
-    // Mock fetch to return a valid future date
     const originalFetch = global.fetch;
     global.fetch = async (url) => {
       if (url.includes('admin.hlx.page/config')) {
@@ -109,6 +108,97 @@ describe('Schedule API Tests', () => {
       return { ok: false };
     };
 
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return { json: async () => ({}) };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      json: async () => ({
+        org: 'org1',
+        site: 'site1',
+        snapshotId: 'snapshot1',
+        userId: 'user@example.com',
+      }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await updateSchedule(request, mockEnvWithCapture);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.snapshotId, 'snapshot1');
+
+    assert(storedSchedule, 'Schedule should be stored');
+    const entry = storedSchedule['org1--site1'].snapshot1;
+    assert(entry, 'Snapshot entry should be in schedule');
+    assert.strictEqual(entry.type, 'snapshot');
+    assert.strictEqual(entry.userId, 'user@example.com');
+    assert.strictEqual(entry.scheduledPublish, validFutureDate.toISOString());
+
+    global.fetch = originalFetch;
+  });
+
+  it('should not include userId in schedule.json when omitted', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+    let storedSchedule = null;
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/config')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: {
+              metadata: {
+                scheduledPublish: validFutureDate.toISOString(),
+              },
+            },
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return { json: async () => ({}) };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
     const request = {
       json: async () => ({
         org: 'org1',
@@ -120,14 +210,19 @@ describe('Schedule API Tests', () => {
       },
     };
 
-    const response = await updateSchedule(request, mockEnv);
+    const response = await updateSchedule(request, mockEnvWithCapture);
     const responseData = await response.json();
 
     assert.strictEqual(response.status, 200);
     assert.strictEqual(responseData.success, true);
-    assert.strictEqual(responseData.snapshotId, 'snapshot1');
 
-    // Restore original fetch
+    assert(storedSchedule, 'Schedule should be stored');
+    const entry = storedSchedule['org1--site1'].snapshot1;
+    assert(entry, 'Snapshot entry should be in schedule');
+    assert.strictEqual(entry.type, 'snapshot');
+    assert.strictEqual(entry.scheduledPublish, validFutureDate.toISOString());
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(entry, 'userId'), false, 'userId should not be present when omitted');
+
     global.fetch = originalFetch;
   });
 
@@ -157,6 +252,7 @@ describe('Schedule API Tests', () => {
         org: 'unregistered',
         site: 'site',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -240,6 +336,7 @@ describe('Schedule API Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -625,6 +722,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -673,6 +771,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -721,6 +820,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -769,6 +869,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -817,6 +918,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
