@@ -114,6 +114,7 @@ describe('Schedule API Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -157,6 +158,7 @@ describe('Schedule API Tests', () => {
         org: 'unregistered',
         site: 'site',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -240,6 +242,7 @@ describe('Schedule API Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -625,6 +628,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -673,6 +677,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -721,6 +726,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -769,6 +775,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
@@ -817,6 +824,7 @@ describe('Schedule Time Validation Tests', () => {
         org: 'org1',
         site: 'site1',
         snapshotId: 'snapshot1',
+        userId: 'user@example.com',
       }),
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
