@@ -1,3 +1,11 @@
+# [1.4.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.3.0...v1.4.0) (2026-03-11)
+
+
+### Features
+
+* store userId if passed in while updating schedule ([b2bedc5](https://github.com/adobe/helix-snapshot-scheduler/commit/b2bedc5838758535bfb4d4c4fe1d9fbb1fba8ad5))
+* store userId if passed in while updating schedule ([d88726d](https://github.com/adobe/helix-snapshot-scheduler/commit/d88726de1aff906aa5d6a86b688c33c306aed335))
+
 # [1.3.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.2.0...v1.3.0) (2026-03-09)
 
 
