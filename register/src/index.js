@@ -561,22 +561,20 @@ export async function schedulePage(request, env) {
 }
 
 /**
- * Delete a scheduled page publish
+ * Delete a scheduled page publish.
+ * Route: DELETE /schedule/page/:org/:site/*
+ * The wildcard captures the page path (which may contain slashes).
  * @param {Object} request - The incoming request
  * @param {Object} env - The environment object
  */
 export async function deletePageSchedule(request, env) {
   try {
-    const data = await request.json();
-    if (!data) {
-      return createErrorResponse('Invalid body. Please provide org, site, and path', request, 400);
+    const { org, site } = request.params;
+    const pagePath = request.params['*'];
+    if (!org || !site || !pagePath) {
+      return createErrorResponse('Invalid URL. Expected /schedule/page/:org/:site/:path', request, 400);
     }
-
-    const { org, site, path } = data;
-    if (!org || !site || !path) {
-      return createErrorResponse('Invalid body. Please provide org, site, and path', request, 400);
-    }
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const normalizedPath = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
 
     const apiKey = await getApiKey(env, org, site);
     if (!apiKey) {
@@ -660,6 +658,7 @@ const router = IttyRouter();
 // Handle preflight OPTIONS requests for browser endpoints only
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/page/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
 router.options('/register/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
@@ -667,7 +666,7 @@ router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
 router.post('/schedule', async (request, env) => updateSchedule(request, env));
 router.post('/schedule/page', async (request, env) => schedulePage(request, env));
-router.delete('/schedule/page', async (request, env) => deletePageSchedule(request, env));
+router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env));
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
 router.all('*', () => createErrorResponse('404, not found!', null, 404));

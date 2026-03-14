@@ -1398,11 +1398,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        path: '/my-page',
-      }),
+      params: { org: 'org1', site: 'site1', '*': 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1418,6 +1414,59 @@ describe('DeletePageSchedule API Tests', () => {
     assert(storedSchedule, 'Schedule should be stored');
     assert.strictEqual(storedSchedule['org1--site1']['/my-page'], undefined);
     assert(storedSchedule['org1--site1']['/other-page'], 'Other page should remain');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should handle paths with slashes (e.g. /blog/2025/my-article)', async () => {
+    const { deletePageSchedule } = await import('../src/index.js');
+
+    let storedSchedule = null;
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithPublishPermission();
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  '/blog/2025/my-article': {
+                    type: 'page',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1', '*': 'blog/2025/my-article' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deletePageSchedule(request, mockEnvWithCapture);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.path, '/blog/2025/my-article');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'], undefined);
 
     global.fetch = originalFetch;
   });
@@ -1458,11 +1507,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        path: '/only-page',
-      }),
+      params: { org: 'org1', site: 'site1', '*': 'only-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1484,11 +1529,7 @@ describe('DeletePageSchedule API Tests', () => {
     global.fetch = mockFetchWithPublishPermission();
 
     const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        path: '/nonexistent-page',
-      }),
+      params: { org: 'org1', site: 'site1', '*': 'nonexistent-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1502,29 +1543,11 @@ describe('DeletePageSchedule API Tests', () => {
     global.fetch = originalFetch;
   });
 
-  it('should return 400 for missing required fields', async () => {
+  it('should return 400 when path is missing from URL', async () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        // missing path
-      }),
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
-      },
-    };
-
-    const response = await deletePageSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 400);
-  });
-
-  it('should return 400 for null request body', async () => {
-    const { deletePageSchedule } = await import('../src/index.js');
-
-    const request = {
-      json: async () => null,
+      params: { org: 'org1', site: 'site1' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1538,11 +1561,7 @@ describe('DeletePageSchedule API Tests', () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        path: '/my-page',
-      }),
+      params: { org: 'org1', site: 'site1', '*': 'my-page' },
       headers: {
         get: () => null,
       },
@@ -1569,11 +1588,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        path: '/my-page',
-      }),
+      params: { org: 'org1', site: 'site1', '*': 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1591,11 +1606,7 @@ describe('DeletePageSchedule API Tests', () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      json: async () => ({
-        org: 'unregistered',
-        site: 'site',
-        path: '/my-page',
-      }),
+      params: { org: 'unregistered', site: 'site', '*': 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1603,63 +1614,6 @@ describe('DeletePageSchedule API Tests', () => {
 
     const response = await deletePageSchedule(request, mockEnv);
     assert.strictEqual(response.status, 404);
-  });
-
-  it('should normalize path without leading slash', async () => {
-    const { deletePageSchedule } = await import('../src/index.js');
-
-    let storedSchedule = null;
-    const originalFetch = global.fetch;
-    global.fetch = mockFetchWithPublishPermission();
-
-    const mockEnvWithCapture = {
-      ...mockEnv,
-      R2_BUCKET: {
-        get: async (key) => {
-          if (key === 'schedule.json') {
-            return {
-              json: async () => ({
-                'org1--site1': {
-                  '/my-page': {
-                    type: 'page',
-                    scheduledPublish: '2025-06-15T12:00:00Z',
-                    userId: 'user@example.com',
-                  },
-                },
-              }),
-            };
-          }
-          return null;
-        },
-        put: async (key, value) => {
-          if (key === 'schedule.json') {
-            storedSchedule = JSON.parse(value);
-          }
-          return true;
-        },
-      },
-    };
-
-    const request = {
-      json: async () => ({
-        org: 'org1',
-        site: 'site1',
-        path: 'my-page', // no leading slash
-      }),
-      headers: {
-        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
-      },
-    };
-
-    const response = await deletePageSchedule(request, mockEnvWithCapture);
-    const responseData = await response.json();
-
-    assert.strictEqual(response.status, 200);
-    assert.strictEqual(responseData.path, '/my-page');
-    assert(storedSchedule, 'Schedule should be stored');
-    assert.strictEqual(storedSchedule['org1--site1'], undefined);
-
-    global.fetch = originalFetch;
   });
 });
 
