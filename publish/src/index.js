@@ -204,6 +204,25 @@ async function batchUpdateScheduledJson(env, snapshots) {
   }
 }
 
+/**
+ * Check whether a schedule entry still exists in schedule.json.
+ * Returns false if the entry was removed (e.g. via DELETE /schedule/page),
+ * preventing publication of unscheduled items whose queue messages are
+ * already in-flight.
+ */
+async function isStillScheduled(env, org, site, path) {
+  try {
+    const scheduleData = await env.R2_BUCKET.get('schedule.json');
+    if (!scheduleData) return false;
+    const schedule = await scheduleData.json();
+    const orgSiteKey = `${org}--${site}`;
+    return !!(schedule[orgSiteKey] && schedule[orgSiteKey][path]);
+  } catch (err) {
+    console.warn('Could not verify schedule entry, proceeding with publish:', err.message);
+    return true;
+  }
+}
+
 export default {
   async queue(batch, env) {
     const publishedSnapshots = [];
@@ -223,6 +242,14 @@ export default {
       const path = msg.body.path ?? msg.body.snapshotId;
 
       try {
+        // Guard: verify the entry hasn't been unscheduled while the message was in-flight
+        const stillScheduled = await isStillScheduled(env, org, site, path);
+        if (!stillScheduled) {
+          console.log(`Skipping ${type} ${path} for ${org}/${site}: entry was unscheduled`);
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+
         // Publish the snapshot or page
         const publishSuccess = type === 'page'
           ? await publishPage(env, org, site, path)

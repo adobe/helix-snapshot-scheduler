@@ -243,8 +243,13 @@ describe('Publish Snapshot Service Tests', () => {
       assert.strictEqual(updatedSchedule['org1--site1'], undefined);
     });
 
-    it('should throw error when schedule data is missing', async () => {
+    it('should skip publish when schedule data is missing (entry was unscheduled)', async () => {
+      let scheduleWritten = false;
       mockR2Bucket.get = async () => null;
+      mockR2Bucket.put = async (key) => {
+        if (key === 'schedule.json') scheduleWritten = true;
+        return true;
+      };
 
       const { default: worker } = await import('../src/index.js');
 
@@ -259,14 +264,18 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should throw error to trigger retry
-      await assert.rejects(
-        () => worker.queue(batch, mockEnv),
-        /Schedule data not found/,
-      );
+      await worker.queue(batch, mockEnv);
+      assert.strictEqual(scheduleWritten, false, 'Should not write schedule.json when all messages were skipped');
     });
 
-    it('should not throw when snapshot not found in schedule (logs warning)', async () => {
+    it('should skip publish when entry is not found in schedule (unscheduled)', async () => {
+      let publishCalled = false;
+      const origFetch = global.fetch;
+      global.fetch = async (...args) => {
+        publishCalled = true;
+        return origFetch(...args);
+      };
+
       const { default: worker } = await import('../src/index.js');
 
       const batch = {
@@ -280,8 +289,8 @@ describe('Publish Snapshot Service Tests', () => {
         }],
       };
 
-      // Should complete successfully (logs warning but doesn't fail)
       await worker.queue(batch, mockEnv);
+      assert.strictEqual(publishCalled, false, 'Should not call publish API for unscheduled entry');
     });
   });
 
@@ -598,31 +607,7 @@ describe('Publish Snapshot Service Tests', () => {
   });
 
   describe('edge cases', () => {
-    it('should throw error on empty message body when API token missing', async () => {
-      // Mock KV to return no API token
-      mockEnv.SCHEDULER_KV.get = async () => null;
-
-      const { default: worker } = await import('../src/index.js');
-
-      const batch = {
-        messages: [{
-          body: {
-            org: 'testorg',
-            site: 'testsite',
-            path: 'snap1',
-            scheduledPublish: '2025-01-01T10:00:00Z',
-          },
-        }],
-      };
-
-      // Should throw error (no API token found)
-      await assert.rejects(
-        () => worker.queue(batch, mockEnv),
-        /Org\/Site not registered|Failed to publish snapshot/,
-      );
-    });
-
-    it('should throw error on missing required fields in message body when API token missing', async () => {
+    it('should throw error when API token missing for scheduled entry', async () => {
       // Mock KV to return no API token
       mockEnv.SCHEDULER_KV.get = async () => null;
 
@@ -633,13 +618,13 @@ describe('Publish Snapshot Service Tests', () => {
           body: {
             org: 'org1',
             site: 'site1',
-            path: 'snap1',
+            path: 'snapshot1',
             scheduledPublish: '2025-01-01T10:00:00Z',
           },
         }],
       };
 
-      // Should throw error (no API token)
+      // Should throw error (no API token found)
       await assert.rejects(
         () => worker.queue(batch, mockEnv),
         /Org\/Site not registered|Failed to publish snapshot/,
@@ -683,6 +668,86 @@ describe('Publish Snapshot Service Tests', () => {
     });
   });
 
+  describe('isStillScheduled guard', () => {
+    it('should skip page publish when entry was deleted between cron queue and delivery', async () => {
+      let publishCalled = false;
+      global.fetch = async () => {
+        publishCalled = true;
+        return { ok: true, status: 200, statusText: 'OK' };
+      };
+
+      // Schedule does NOT contain /my-page (simulates DELETE was called)
+      mockR2Bucket.get = async (key) => {
+        if (key === 'schedule.json') {
+          return {
+            json: async () => ({
+              'org1--site1': {
+                snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
+              },
+            }),
+          };
+        }
+        return null;
+      };
+
+      const { default: worker } = await import('../src/index.js');
+
+      const batch = {
+        messages: [{
+          body: {
+            org: 'org1',
+            site: 'site1',
+            path: '/my-page',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+            type: 'page',
+            userId: 'user@example.com',
+          },
+        }],
+      };
+
+      await worker.queue(batch, mockEnv);
+      assert.strictEqual(publishCalled, false, 'Should not publish a page that was unscheduled');
+    });
+
+    it('should still publish when isStillScheduled R2 read fails (fail-open)', async () => {
+      let r2GetCallCount = 0;
+      mockR2Bucket.get = async (key) => {
+        r2GetCallCount += 1;
+        if (r2GetCallCount === 1) {
+          // First call is isStillScheduled — simulate R2 transient failure
+          throw new Error('R2 transient error');
+        }
+        // Subsequent calls for batchMoveToCompleted / batchUpdateScheduledJson
+        if (key === 'schedule.json') {
+          return {
+            json: async () => ({
+              'org1--site1': {
+                snapshot1: { scheduledPublish: '2025-01-01T10:00:00Z', approved: false },
+              },
+            }),
+          };
+        }
+        return null;
+      };
+
+      const { default: worker } = await import('../src/index.js');
+
+      const batch = {
+        messages: [{
+          body: {
+            org: 'org1',
+            site: 'site1',
+            path: 'snapshot1',
+            scheduledPublish: '2025-01-01T10:00:00Z',
+          },
+        }],
+      };
+
+      // Should not throw — fail-open means we publish when unsure
+      await worker.queue(batch, mockEnv);
+    });
+  });
+
   describe('publishPage function', () => {
     it('should successfully publish a page via live API', async () => {
       global.fetch = async (url, options) => {
@@ -690,6 +755,20 @@ describe('Publish Snapshot Service Tests', () => {
           return { ok: true, status: 200, statusText: 'OK' };
         }
         throw new Error('Unexpected fetch call');
+      };
+
+      // Ensure /my-page exists in the schedule so isStillScheduled returns true
+      mockR2Bucket.get = async (key) => {
+        if (key === 'schedule.json') {
+          return {
+            json: async () => ({
+              'org1--site1': {
+                '/my-page': { type: 'page', scheduledPublish: '2025-01-01T10:00:00Z', userId: 'user@example.com' },
+              },
+            }),
+          };
+        }
+        return null;
       };
 
       const { default: worker } = await import('../src/index.js');
@@ -719,6 +798,19 @@ describe('Publish Snapshot Service Tests', () => {
         throw new Error('Unexpected fetch call');
       };
 
+      mockR2Bucket.get = async (key) => {
+        if (key === 'schedule.json') {
+          return {
+            json: async () => ({
+              'org1--site1': {
+                '/my-page': { type: 'page', scheduledPublish: '2025-01-01T10:00:00Z', userId: 'user@example.com' },
+              },
+            }),
+          };
+        }
+        return null;
+      };
+
       const { default: worker } = await import('../src/index.js');
 
       const batch = {
@@ -742,6 +834,19 @@ describe('Publish Snapshot Service Tests', () => {
 
     it('should throw error when page publish API token is missing', async () => {
       mockEnv.SCHEDULER_KV.get = async () => null;
+
+      mockR2Bucket.get = async (key) => {
+        if (key === 'schedule.json') {
+          return {
+            json: async () => ({
+              'org1--site1': {
+                '/my-page': { type: 'page', scheduledPublish: '2025-01-01T10:00:00Z', userId: 'user@example.com' },
+              },
+            }),
+          };
+        }
+        return null;
+      };
 
       const { default: worker } = await import('../src/index.js');
 
