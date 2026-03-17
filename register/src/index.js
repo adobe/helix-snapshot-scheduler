@@ -22,6 +22,7 @@ function getAllowedOrigins() {
   const baseOrigins = [
     '*.aem.live',
     '*.aem.page',
+    '*.da.live',
     'da.live',
     'http://localhost:3000',
     'http://localhost:6456',
