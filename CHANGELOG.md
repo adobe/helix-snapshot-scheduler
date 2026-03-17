@@ -1,3 +1,11 @@
+## [1.4.3](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.2...v1.4.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* add preflight options for register endpoint ([5047c09](https://github.com/adobe/helix-snapshot-scheduler/commit/5047c09e284742f510e560d5f8782d51f839d26c))
+* add preflight options for register endpoint ([ffd9f34](https://github.com/adobe/helix-snapshot-scheduler/commit/ffd9f34899e7efd0486c79220f463d52d28a1ba4))
+
 ## [1.4.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.1...v1.4.2) (2026-03-17)
 
 
