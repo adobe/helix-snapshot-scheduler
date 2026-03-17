@@ -1,3 +1,13 @@
+## [1.4.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.0...v1.4.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* add delete route for pages, and additional check before publishing ([81e8e1e](https://github.com/adobe/helix-snapshot-scheduler/commit/81e8e1eba1a4ddc816dd5dfc376401410414f775))
+* add delete route for pages, and additional check before publishing ([68e1334](https://github.com/adobe/helix-snapshot-scheduler/commit/68e1334043831a992003167f480f21f934277f02))
+* da.live allowed origin ([511fc82](https://github.com/adobe/helix-snapshot-scheduler/commit/511fc82828872be0ff0559ec99e32a091bf1acc1))
+* DELETE should not have body. just provide path ([ff87976](https://github.com/adobe/helix-snapshot-scheduler/commit/ff879765ef16595d0e02b671802d7e67eda8d7af))
+
 # [1.4.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.3.0...v1.4.0) (2026-03-11)
 
 
