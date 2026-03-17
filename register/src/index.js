@@ -21,8 +21,8 @@ let globalEnv = null;
 function getAllowedOrigins() {
   const baseOrigins = [
     '*.aem.live',
-    '*.da.live',
     '*.aem.page',
+    'da.live',
     'http://localhost:3000',
     'http://localhost:6456',
   ];
@@ -33,7 +33,7 @@ function getAllowedOrigins() {
 function getCorsHeaders(request) {
   const origin = request.headers.get('Origin');
   const corsHeaders = {
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
   };
@@ -560,12 +560,105 @@ export async function schedulePage(request, env) {
   }
 }
 
+/**
+ * Delete a scheduled page publish.
+ * Route: DELETE /schedule/page/:org/:site/*
+ * The wildcard captures the page path (which may contain slashes).
+ * @param {Object} request - The incoming request
+ * @param {Object} env - The environment object
+ */
+export async function deletePageSchedule(request, env) {
+  try {
+    const { org, site } = request.params;
+    const pagePath = request.params['*'];
+    if (!org || !site || !pagePath) {
+      return createErrorResponse('Invalid URL. Expected /schedule/page/:org/:site/:path', request, 400);
+    }
+    const normalizedPath = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
+
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
+      return createErrorResponse('Org/site not registered', request, 404);
+    }
+
+    const authToken = request.headers.get('Authorization');
+    if (!authToken) {
+      return createErrorResponse('Unauthorized', request, 401);
+    }
+    const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
+    if (!canPublish) {
+      return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
+    }
+
+    let scheduleData = {};
+    try {
+      const existingSchedule = await env.R2_BUCKET.get('schedule.json');
+      if (existingSchedule) {
+        scheduleData = await existingSchedule.json();
+      }
+    } catch (err) {
+      console.warn('Could not read existing schedule data:', err);
+      return createErrorResponse('Could not retrieve schedule data', request, 500);
+    }
+
+    const orgSiteKey = `${org}--${site}`;
+    if (!scheduleData[orgSiteKey] || !scheduleData[orgSiteKey][normalizedPath]) {
+      return createErrorResponse('No schedule found for this path', request, 404);
+    }
+
+    delete scheduleData[orgSiteKey][normalizedPath];
+
+    if (Object.keys(scheduleData[orgSiteKey]).length === 0) {
+      delete scheduleData[orgSiteKey];
+    }
+
+    await env.R2_BUCKET.put('schedule.json', JSON.stringify(scheduleData, null, 2));
+
+    console.log(`Page schedule deleted for ${orgSiteKey}: ${normalizedPath}`);
+
+    const auditLogResponse = await fetch(`https://admin.hlx.page/log/${org}/${site}/main`, {
+      method: 'POST',
+      headers: {
+        Authorization: `${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        entries: [{
+          timestamp: Date.now(),
+          route: 'deleted-scheduled-publish',
+          path: normalizedPath,
+        }],
+      }),
+    }).catch((err) => console.error('Failed to post audit log:', err));
+    if (auditLogResponse && !auditLogResponse.ok) {
+      console.error('Failed to post audit log:', auditLogResponse.status, auditLogResponse.statusText);
+    }
+
+    return createResponse(JSON.stringify({
+      success: true,
+      message: `Page schedule deleted for ${org}/${site}`,
+      org,
+      site,
+      path: normalizedPath,
+    }), request, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (err) {
+    console.error('Delete page schedule failed: ', request, err);
+    return createErrorResponse('Delete page schedule failed: Internal server error', request, 500);
+  }
+}
+
 // Create a new router
 const router = IttyRouter();
 
 // Handle preflight OPTIONS requests for browser endpoints only
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/page/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
 router.options('/register/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
@@ -573,6 +666,7 @@ router.post('/register', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
 router.post('/schedule', async (request, env) => updateSchedule(request, env));
 router.post('/schedule/page', async (request, env) => schedulePage(request, env));
+router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env));
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
 router.all('*', () => createErrorResponse('404, not found!', null, 404));
