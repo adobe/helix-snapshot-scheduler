@@ -204,7 +204,10 @@ export async function registerRequest(request, env) {
       console.log('Register Request: Failed to set API key');
       return createErrorResponse('Register Request failed: Internal server error', null, 500);
     }
-    return new Response(null, { status: 200 });
+    return createResponse(JSON.stringify({ success: true }), request, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     console.error('Register Request failed: ', request, err);
     return createErrorResponse('Register Request failed: Internal server error', null, 500);
