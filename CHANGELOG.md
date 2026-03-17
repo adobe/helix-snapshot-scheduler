@@ -1,3 +1,11 @@
+## [1.4.4](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.3...v1.4.4) (2026-03-17)
+
+
+### Bug Fixes
+
+* give proper response with cors headers when register is successful ([26ddf1a](https://github.com/adobe/helix-snapshot-scheduler/commit/26ddf1a6ebe4c4e884230820dfbdeeb4fa498986))
+* give proper response with cors headers when register is successful ([18487f8](https://github.com/adobe/helix-snapshot-scheduler/commit/18487f8425cd22bafb3e71695b5a8fc0d353684b))
+
 ## [1.4.3](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.2...v1.4.3) (2026-03-17)
 
 
