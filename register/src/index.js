@@ -21,8 +21,8 @@ let globalEnv = null;
 function getAllowedOrigins() {
   const baseOrigins = [
     '*.aem.live',
-    '*.da.live',
     '*.aem.page',
+    'da.live',
     'http://localhost:3000',
     'http://localhost:6456',
   ];
