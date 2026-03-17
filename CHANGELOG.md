@@ -1,3 +1,11 @@
+## [1.4.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.1...v1.4.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* keep both da.live origins ([a9c77c8](https://github.com/adobe/helix-snapshot-scheduler/commit/a9c77c8ef68aaaf731b9e6fa4c682d93a7dbbea4))
+* keep both da.live origins ([522201c](https://github.com/adobe/helix-snapshot-scheduler/commit/522201c369a0ba12d92e3d5b7da6f516493654c0))
+
 ## [1.4.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.0...v1.4.1) (2026-03-17)
 
 
