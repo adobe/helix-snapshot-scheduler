@@ -79,6 +79,22 @@ function createErrorResponse(errorMessage, request, statusCode) {
   return new Response(null, { status: statusCode, headers });
 }
 
+function resolveOrgSite(request, data) {
+  const urlOrg = request.params?.org;
+  const urlSite = request.params?.site;
+  const bodyOrg = data?.org;
+  const bodySite = data?.site;
+
+  if ((urlOrg && bodyOrg && urlOrg !== bodyOrg) || (urlSite && bodySite && urlSite !== bodySite)) {
+    return { error: 'URL org/site must match body org/site' };
+  }
+
+  return {
+    org: urlOrg || bodyOrg,
+    site: urlSite || bodySite,
+  };
+}
+
 export async function setApiKey(env, org, site, apiKey) {
   try {
     if (!env || !env.SCHEDULER_KV) {
@@ -182,7 +198,12 @@ export async function registerRequest(request, env) {
       console.log('Register Request: Invalid body. Please provide org, site and apiKey');
       return createErrorResponse('Invalid body. Please provide org, site and apiKey', null, 400);
     }
-    const { org, site, apiKey } = data;
+    const { org, site, error } = resolveOrgSite(request, data);
+    if (error) {
+      console.log(`Register Request: ${error}`);
+      return createErrorResponse(error, null, 400);
+    }
+    const { apiKey } = data;
     if (!org || !site || !apiKey) {
       console.log('Register Request: Invalid body. Please provide org, site and apiKey');
       return createErrorResponse('Invalid body. Please provide org, site and apiKey', null, 400);
@@ -254,9 +275,12 @@ export async function updateSchedule(request, env) {
       return createErrorResponse('Invalid body. Please provide org, site and snapshotId', request, 400);
     }
 
-    const {
-      org, site, snapshotId, approved = false, userId,
-    } = data;
+    const { org, site, error } = resolveOrgSite(request, data);
+    if (error) {
+      console.log(`Update Schedule Request: ${error}`);
+      return createErrorResponse(error, request, 400);
+    }
+    const { snapshotId, approved = false, userId } = data;
     if (!org || !site || !snapshotId) {
       console.log('Update Schedule Request: Invalid body. Please provide org, site and snapshotId');
       return createErrorResponse('Invalid body. Please provide org, site and snapshotId', request, 400);
@@ -452,9 +476,12 @@ export async function schedulePage(request, env) {
       return createErrorResponse('Invalid body. Please provide org, site, path, scheduledPublish, and userId', request, 400);
     }
 
-    const {
-      org, site, path, scheduledPublish, userId,
-    } = data;
+    const { org, site, error } = resolveOrgSite(request, data);
+    if (error) {
+      console.log(`Schedule Page Request: ${error}`);
+      return createErrorResponse(error, request, 400);
+    }
+    const { path, scheduledPublish, userId } = data;
     if (!org || !site || !path || !scheduledPublish || !userId) {
       console.log('Schedule Page Request: Invalid body. Please provide org, site, path, scheduledPublish, and userId');
       return createErrorResponse('Invalid body. Please provide org, site, path, scheduledPublish, and userId', request, 400);
@@ -665,12 +692,16 @@ router.options('/register/:org/:site', (request) => createResponse(null, request
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/page/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
+router.post('/register/:org/:site', async (request, env) => registerRequest(request, env));
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
 router.post('/schedule', async (request, env) => updateSchedule(request, env));
 router.post('/schedule/page', async (request, env) => schedulePage(request, env));
+router.post('/schedule/page/:org/:site', async (request, env) => schedulePage(request, env));
+router.post('/schedule/:org/:site', async (request, env) => updateSchedule(request, env));
 router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env));
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes

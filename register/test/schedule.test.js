@@ -81,6 +81,87 @@ global.fetch = async (url) => {
   return { ok: false };
 };
 
+function createJsonRequest(url, body) {
+  return new Request(url, {
+    method: 'POST',
+    headers: {
+      Authorization: 'token test-token',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function createRouteTestEnv({ initialSchedule = {}, apiKey = 'test-api-key' } = {}) {
+  let storedSchedule = null;
+  let storedApiKey = null;
+
+  return {
+    env: {
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return { json: async () => initialSchedule };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+      SCHEDULER_KV: {
+        get: async (key) => (key === 'org1--site1--apiKey' ? apiKey : null),
+        put: async (key, value) => {
+          storedApiKey = { key, value };
+          return true;
+        },
+      },
+    },
+    getStoredSchedule: () => storedSchedule,
+    getStoredApiKey: () => storedApiKey,
+  };
+}
+
+function mockFetchForUrlRouteTests({ canPublish = true, scheduledPublish } = {}) {
+  const nextScheduledPublish = scheduledPublish
+    || new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  return async (url) => {
+    if (url.includes('admin.hlx.page/config')) {
+      return { ok: true };
+    }
+    if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+      return { ok: true };
+    }
+    if (url.includes('admin.hlx.page/snapshot')) {
+      return {
+        ok: true,
+        json: async () => ({
+          manifest: {
+            metadata: {
+              scheduledPublish: nextScheduledPublish,
+            },
+          },
+        }),
+      };
+    }
+    if (url.includes('admin.hlx.page/status/')) {
+      return {
+        ok: true,
+        json: async () => ({
+          live: { status: 200, permissions: canPublish ? ['read', 'write'] : ['read'] },
+        }),
+      };
+    }
+    if (url.includes('admin.hlx.page/log/')) {
+      return { ok: true };
+    }
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+}
+
 describe('Schedule API Tests', () => {
   it('should persist userId in schedule.json when provided', async () => {
     const { updateSchedule } = await import('../src/index.js');
@@ -438,6 +519,148 @@ describe('Register API Tests', () => {
 
     const response = await registerRequest(request, mockEnv);
     assert.strictEqual(response.status, 400);
+  });
+});
+
+describe('URL Format Route Tests', () => {
+  it('should register successfully via POST /register/:org/:site', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env, getStoredApiKey } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/register/org1/site1', {
+      apiKey: 'route-api-key',
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.deepStrictEqual(getStoredApiKey(), {
+      key: 'org1--site1--apiKey',
+      value: 'route-api-key',
+    });
+
+    global.fetch = originalFetch;
+  });
+
+  it('should update a snapshot schedule via POST /schedule/:org/:site', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    global.fetch = mockFetchForUrlRouteTests({ scheduledPublish: validFutureDate });
+
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/org1/site1', {
+      snapshotId: 'snapshot1',
+      userId: 'user@example.com',
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+    const storedSchedule = getStoredSchedule();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.snapshotId, 'snapshot1');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'].snapshot1.type, 'snapshot');
+    assert.strictEqual(storedSchedule['org1--site1'].snapshot1.scheduledPublish, validFutureDate);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should schedule a page via POST /schedule/page/:org/:site', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
+      path: '/my-page',
+      scheduledPublish: validFutureDate,
+      userId: 'user@example.com',
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+    const storedSchedule = getStoredSchedule();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.path, '/my-page');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['/my-page'].type, 'page');
+    assert.strictEqual(storedSchedule['org1--site1']['/my-page'].userId, 'user@example.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should reject mismatched org/site between URL and body for register', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env, getStoredApiKey } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/register/org1/site1', {
+      org: 'other-org',
+      site: 'other-site',
+      apiKey: 'route-api-key',
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
+    assert.strictEqual(getStoredApiKey(), null);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should reject mismatched org/site between URL and body for schedule', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/org1/site1', {
+      org: 'other-org',
+      site: 'other-site',
+      snapshotId: 'snapshot1',
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
+    assert.strictEqual(getStoredSchedule(), null);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should reject mismatched org/site between URL and body for schedule page', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
+      org: 'other-org',
+      site: 'other-site',
+      path: '/my-page',
+      scheduledPublish: validFutureDate,
+      userId: 'user@example.com',
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
+    assert.strictEqual(getStoredSchedule(), null);
+
+    global.fetch = originalFetch;
   });
 });
 
