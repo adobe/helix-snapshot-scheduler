@@ -683,6 +683,79 @@ export async function deletePageSchedule(request, env) {
   }
 }
 
+/**
+ * Delete a scheduled snapshot publish.
+ * Route: DELETE /schedule/snapshot/:org/:site/*
+ * The wildcard captures the snapshot ID (which may contain slashes).
+ * @param {Object} request - The incoming request
+ * @param {Object} env - The environment object
+ */
+export async function deleteSnapshotSchedule(request, env) {
+  try {
+    const { org, site } = request.params;
+    const snapshotId = request.params['*'];
+    if (!org || !site || !snapshotId) {
+      return createErrorResponse('Invalid URL. Expected /schedule/snapshot/:org/:site/:snapshotId', request, 400);
+    }
+
+    const apiKey = await getApiKey(env, org, site);
+    if (!apiKey) {
+      return createErrorResponse('Org/site not registered', request, 404);
+    }
+
+    const authToken = request.headers.get('Authorization');
+    if (!authToken) {
+      return createErrorResponse('Unauthorized', request, 401);
+    }
+    const authorized = await isAuthorized(authToken, org, site, false);
+    if (!authorized) {
+      return createErrorResponse('Unauthorized', request, 401);
+    }
+
+    let scheduleData = {};
+    try {
+      const existingSchedule = await env.R2_BUCKET.get('schedule.json');
+      if (existingSchedule) {
+        scheduleData = await existingSchedule.json();
+      }
+    } catch (err) {
+      console.warn('Could not read existing schedule data:', err);
+      return createErrorResponse('Could not retrieve schedule data', request, 500);
+    }
+
+    const orgSiteKey = `${org}--${site}`;
+    if (!scheduleData[orgSiteKey] || !scheduleData[orgSiteKey][snapshotId]) {
+      return createErrorResponse('No schedule found for this snapshot', request, 404);
+    }
+
+    delete scheduleData[orgSiteKey][snapshotId];
+
+    if (Object.keys(scheduleData[orgSiteKey]).length === 0) {
+      delete scheduleData[orgSiteKey];
+    }
+
+    await env.R2_BUCKET.put('schedule.json', JSON.stringify(scheduleData, null, 2));
+
+    console.log(`Snapshot schedule deleted for ${orgSiteKey}: ${snapshotId}`);
+
+    return createResponse(JSON.stringify({
+      success: true,
+      message: `Snapshot schedule deleted for ${org}/${site}`,
+      org,
+      site,
+      snapshotId,
+    }), request, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (err) {
+    console.error('Delete snapshot schedule failed: ', request, err);
+    return createErrorResponse('Delete snapshot schedule failed: Internal server error', request, 500);
+  }
+}
+
 // Create a new router
 const router = IttyRouter();
 
@@ -693,6 +766,7 @@ router.options('/schedule', (request) => createResponse(null, request, { status:
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page/:org/:site', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/snapshot/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env));
@@ -703,6 +777,7 @@ router.post('/schedule/page', async (request, env) => schedulePage(request, env)
 router.post('/schedule/page/:org/:site', async (request, env) => schedulePage(request, env));
 router.post('/schedule/:org/:site', async (request, env) => updateSchedule(request, env));
 router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env));
+router.delete('/schedule/snapshot/:org/:site/*', async (request, env) => deleteSnapshotSchedule(request, env));
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
 router.all('*', () => createErrorResponse('404, not found!', null, 404));

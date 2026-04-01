@@ -1840,6 +1840,211 @@ describe('DeletePageSchedule API Tests', () => {
   });
 });
 
+describe('DeleteSnapshotSchedule API Tests', () => {
+  function mockFetchWithSnapshotAuth({ authorized = true } = {}) {
+    return async (url) => {
+      if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+        return { ok: authorized };
+      }
+      return { ok: true };
+    };
+  }
+
+  it('should delete a scheduled snapshot successfully', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    let storedSchedule = null;
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth();
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  'main/2025-06-15-12-00-00': {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                  'main/2025-06-16-12-00-00': {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-16T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnvWithCapture);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.snapshotId, 'main/2025-06-15-12-00-00');
+
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['main/2025-06-15-12-00-00'], undefined);
+    assert(storedSchedule['org1--site1']['main/2025-06-16-12-00-00'], 'Other snapshot should remain');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should clean up empty org/site key after last snapshot is deleted', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    let storedSchedule = null;
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth();
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  'main/2025-06-15-12-00-00': {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnvWithCapture);
+    assert.strictEqual(response.status, 200);
+
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'], undefined);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 404 when snapshot is not scheduled', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth();
+
+    const request = {
+      params: { org: 'org1', site: 'site1', '*': 'main/nonexistent-snapshot' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    const errorHeader = response.headers.get('X-Error');
+    assert.strictEqual(response.status, 404);
+    assert.strictEqual(errorHeader, 'No schedule found for this snapshot');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 400 when snapshot ID is missing from URL', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 400);
+  });
+
+  it('should return 401 when no Authorization header is provided', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 401);
+  });
+
+  it('should return 401 when user does not have snapshot list access', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth({ authorized: false });
+
+    const request = {
+      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 401);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 404 for unregistered org/site', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'unregistered', site: 'site', '*': 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 404);
+  });
+});
+
 describe('Authorization Tests', () => {
   it('should return true for valid admin authorization', async () => {
     const { isAuthorized } = await import('../src/index.js');
