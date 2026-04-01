@@ -769,15 +769,15 @@ router.options('/schedule/page/:org/:site', (request) => createResponse(null, re
 router.options('/schedule/snapshot/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
-router.post('/register', async (request, env) => registerRequest(request, env));
-router.post('/register/:org/:site', async (request, env) => registerRequest(request, env));
+router.post('/register', async (request, env) => registerRequest(request, env)); // old route for register
+router.post('/register/:org/:site', async (request, env) => registerRequest(request, env)); // new route for register
 router.get('/register/:org/:site', async (request, env) => isRegistered(request, env));
-router.post('/schedule', async (request, env) => updateSchedule(request, env));
-router.post('/schedule/page', async (request, env) => schedulePage(request, env));
-router.post('/schedule/page/:org/:site', async (request, env) => schedulePage(request, env));
-router.post('/schedule/:org/:site', async (request, env) => updateSchedule(request, env));
-router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env));
-router.delete('/schedule/snapshot/:org/:site/*', async (request, env) => deleteSnapshotSchedule(request, env));
+router.post('/schedule', async (request, env) => updateSchedule(request, env)); // old route for schedule snapshot
+router.post('/schedule/page', async (request, env) => schedulePage(request, env)); // old route for schedule page
+router.post('/schedule/page/:org/:site', async (request, env) => schedulePage(request, env)); // new route for schedule page
+router.post('/schedule/:org/:site', async (request, env) => updateSchedule(request, env)); // new route for schedule snapshot
+router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env)); // new route for delete page schedule
+router.delete('/schedule/snapshot/:org/:site/*', async (request, env) => deleteSnapshotSchedule(request, env)); // new route for delete snapshot schedule
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
 router.all('*', () => createErrorResponse('404, not found!', null, 404));
