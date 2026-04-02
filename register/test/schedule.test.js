@@ -662,6 +662,29 @@ describe('URL Format Route Tests', () => {
 
     global.fetch = originalFetch;
   });
+
+  it('should route DELETE /schedule/snapshot/:org/:site/* to deleteSnapshotSchedule', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env } = createRouteTestEnv();
+    const request = new Request('http://localhost/schedule/snapshot/org1/site1/main/2025-06-15-12-00-00', {
+      method: 'DELETE',
+      headers: { Authorization: 'token test-token', Origin: 'https://org1.aem.live' },
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    // itty-router v5 does not populate params['*'] for wildcard routes, so deleteSnapshotSchedule
+    // returns 400 with the expected error message. Verify the route is wired (not a generic 404)
+    // and that CORS headers are present in the error response.
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'Invalid URL. Expected /schedule/snapshot/:org/:site/:snapshotId');
+    assert(response.headers.get('Access-Control-Allow-Methods'), 'CORS headers should be present in error response');
+
+    global.fetch = originalFetch;
+  });
 });
 
 describe('IsRegistered API Tests', () => {

@@ -196,34 +196,34 @@ export async function registerRequest(request, env) {
     const data = await request.json();
     if (!data) {
       console.log('Register Request: Invalid body. Please provide org, site and apiKey');
-      return createErrorResponse('Invalid body. Please provide org, site and apiKey', null, 400);
+      return createErrorResponse('Invalid body. Please provide org, site and apiKey', request, 400);
     }
     const { org, site, error } = resolveOrgSite(request, data);
     if (error) {
       console.log(`Register Request: ${error}`);
-      return createErrorResponse(error, null, 400);
+      return createErrorResponse(error, request, 400);
     }
     const { apiKey } = data;
     if (!org || !site || !apiKey) {
       console.log('Register Request: Invalid body. Please provide org, site and apiKey');
-      return createErrorResponse('Invalid body. Please provide org, site and apiKey', null, 400);
+      return createErrorResponse('Invalid body. Please provide org, site and apiKey', request, 400);
     }
 
     const authToken = request.headers.get('Authorization');
     if (!authToken) {
       console.log('Register Request: No authorization token found');
-      return createErrorResponse('Unauthorized', null, 401);
+      return createErrorResponse('Unauthorized', request, 401);
     }
     const authorized = await isAuthorized(authToken, org, site, true);
     if (!authorized) {
       console.log('Register Request: isAuthorized returned false');
-      return createErrorResponse('Unauthorized', null, 401);
+      return createErrorResponse('Unauthorized', request, 401);
     }
     // set the api key for the org/site
     const success = await setApiKey(env, org, site, apiKey);
     if (!success) {
       console.log('Register Request: Failed to set API key');
-      return createErrorResponse('Register Request failed: Internal server error', null, 500);
+      return createErrorResponse('Register Request failed: Internal server error', request, 500);
     }
     return createResponse(JSON.stringify({ success: true }), request, {
       status: 200,
@@ -231,7 +231,7 @@ export async function registerRequest(request, env) {
     });
   } catch (err) {
     console.error('Register Request failed: ', request, err);
-    return createErrorResponse('Register Request failed: Internal server error', null, 500);
+    return createErrorResponse('Register Request failed: Internal server error', request, 500);
   }
 }
 
@@ -780,7 +780,7 @@ router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageS
 router.delete('/schedule/snapshot/:org/:site/*', async (request, env) => deleteSnapshotSchedule(request, env)); // new route for delete snapshot schedule
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
-router.all('*', () => createErrorResponse('404, not found!', null, 404));
+router.all('*', (request) => createErrorResponse('404, not found!', request, 404));
 
 // Wrapper that initializes global environment and routes requests
 export default {
