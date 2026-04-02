@@ -546,14 +546,14 @@ describe('URL Format Route Tests', () => {
     global.fetch = originalFetch;
   });
 
-  it('should update a snapshot schedule via POST /schedule/:org/:site', async () => {
+  it('should update a snapshot schedule via POST /schedule/snapshot/:org/:site', async () => {
     const { default: worker } = await import('../src/index.js');
     const originalFetch = global.fetch;
     const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     global.fetch = mockFetchForUrlRouteTests({ scheduledPublish: validFutureDate });
 
     const { env, getStoredSchedule } = createRouteTestEnv();
-    const request = createJsonRequest('http://localhost/schedule/org1/site1', {
+    const request = createJsonRequest('http://localhost/schedule/snapshot/org1/site1', {
       snapshotId: 'snapshot1',
       userId: 'user@example.com',
     });
@@ -618,13 +618,13 @@ describe('URL Format Route Tests', () => {
     global.fetch = originalFetch;
   });
 
-  it('should reject mismatched org/site between URL and body for schedule', async () => {
+  it('should reject mismatched org/site between URL and body for schedule snapshot', async () => {
     const { default: worker } = await import('../src/index.js');
     const originalFetch = global.fetch;
     global.fetch = mockFetchForUrlRouteTests();
 
     const { env, getStoredSchedule } = createRouteTestEnv();
-    const request = createJsonRequest('http://localhost/schedule/org1/site1', {
+    const request = createJsonRequest('http://localhost/schedule/snapshot/org1/site1', {
       org: 'other-org',
       site: 'other-site',
       snapshotId: 'snapshot1',
