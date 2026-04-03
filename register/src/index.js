@@ -763,6 +763,7 @@ const router = IttyRouter();
 router.options('/register', (request) => createResponse(null, request, { status: 204 }));
 router.options('/register/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page/:org/:site', (request) => createResponse(null, request, { status: 204 }));
