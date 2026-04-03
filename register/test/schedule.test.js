@@ -81,6 +81,87 @@ global.fetch = async (url) => {
   return { ok: false };
 };
 
+function createJsonRequest(url, body) {
+  return new Request(url, {
+    method: 'POST',
+    headers: {
+      Authorization: 'token test-token',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function createRouteTestEnv({ initialSchedule = {}, apiKey = 'test-api-key' } = {}) {
+  let storedSchedule = null;
+  let storedApiKey = null;
+
+  return {
+    env: {
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return { json: async () => initialSchedule };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+      SCHEDULER_KV: {
+        get: async (key) => (key === 'org1--site1--apiKey' ? apiKey : null),
+        put: async (key, value) => {
+          storedApiKey = { key, value };
+          return true;
+        },
+      },
+    },
+    getStoredSchedule: () => storedSchedule,
+    getStoredApiKey: () => storedApiKey,
+  };
+}
+
+function mockFetchForUrlRouteTests({ canPublish = true, scheduledPublish } = {}) {
+  const nextScheduledPublish = scheduledPublish
+    || new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  return async (url) => {
+    if (url.includes('admin.hlx.page/config')) {
+      return { ok: true };
+    }
+    if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+      return { ok: true };
+    }
+    if (url.includes('admin.hlx.page/snapshot')) {
+      return {
+        ok: true,
+        json: async () => ({
+          manifest: {
+            metadata: {
+              scheduledPublish: nextScheduledPublish,
+            },
+          },
+        }),
+      };
+    }
+    if (url.includes('admin.hlx.page/status/')) {
+      return {
+        ok: true,
+        json: async () => ({
+          live: { status: 200, permissions: canPublish ? ['read', 'write'] : ['read'] },
+        }),
+      };
+    }
+    if (url.includes('admin.hlx.page/log/')) {
+      return { ok: true };
+    }
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+}
+
 describe('Schedule API Tests', () => {
   it('should persist userId in schedule.json when provided', async () => {
     const { updateSchedule } = await import('../src/index.js');
@@ -438,6 +519,169 @@ describe('Register API Tests', () => {
 
     const response = await registerRequest(request, mockEnv);
     assert.strictEqual(response.status, 400);
+  });
+});
+
+describe('URL Format Route Tests', () => {
+  it('should register successfully via POST /register/:org/:site', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env, getStoredApiKey } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/register/org1/site1', {
+      apiKey: 'route-api-key',
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.deepStrictEqual(getStoredApiKey(), {
+      key: 'org1--site1--apiKey',
+      value: 'route-api-key',
+    });
+
+    global.fetch = originalFetch;
+  });
+
+  it('should update a snapshot schedule via POST /schedule/snapshot/:org/:site', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    global.fetch = mockFetchForUrlRouteTests({ scheduledPublish: validFutureDate });
+
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/snapshot/org1/site1', {
+      snapshotId: 'snapshot1',
+      userId: 'user@example.com',
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+    const storedSchedule = getStoredSchedule();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.snapshotId, 'snapshot1');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'].snapshot1.type, 'snapshot');
+    assert.strictEqual(storedSchedule['org1--site1'].snapshot1.scheduledPublish, validFutureDate);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should schedule a page via POST /schedule/page/:org/:site', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
+      path: '/my-page',
+      scheduledPublish: validFutureDate,
+      userId: 'user@example.com',
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+    const storedSchedule = getStoredSchedule();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.path, '/my-page');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['/my-page'].type, 'page');
+    assert.strictEqual(storedSchedule['org1--site1']['/my-page'].userId, 'user@example.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should reject mismatched org/site between URL and body for register', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env, getStoredApiKey } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/register/org1/site1', {
+      org: 'other-org',
+      site: 'other-site',
+      apiKey: 'route-api-key',
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
+    assert.strictEqual(getStoredApiKey(), null);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should reject mismatched org/site between URL and body for schedule snapshot', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/snapshot/org1/site1', {
+      org: 'other-org',
+      site: 'other-site',
+      snapshotId: 'snapshot1',
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
+    assert.strictEqual(getStoredSchedule(), null);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should reject mismatched org/site between URL and body for schedule page', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
+      org: 'other-org',
+      site: 'other-site',
+      path: '/my-page',
+      scheduledPublish: validFutureDate,
+      userId: 'user@example.com',
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
+    assert.strictEqual(getStoredSchedule(), null);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should route DELETE /schedule/snapshot/:org/:site/:snapshotId+ to deleteSnapshotSchedule', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const { env } = createRouteTestEnv();
+    const request = new Request('http://localhost/schedule/snapshot/org1/site1/main/2025-06-15-12-00-00', {
+      method: 'DELETE',
+      headers: { Authorization: 'token test-token', Origin: 'https://org1.aem.live' },
+    });
+
+    const response = await worker.fetch(request, env, {});
+
+    // The route should reach deleteSnapshotSchedule (not a generic 404).
+    // It may return 404 (unregistered) or 401 depending on mock setup, but not 404 "not found!".
+    assert.notStrictEqual(response.headers.get('X-Error'), '404, not found!');
+    assert(response.headers.get('Access-Control-Allow-Methods'), 'CORS headers should be present in error response');
+
+    global.fetch = originalFetch;
   });
 });
 
@@ -1398,7 +1642,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'my-page' },
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1454,7 +1698,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'blog/2025/my-article' },
+      params: { org: 'org1', site: 'site1', path: 'blog/2025/my-article' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1507,7 +1751,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'only-page' },
+      params: { org: 'org1', site: 'site1', path: 'only-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1529,7 +1773,7 @@ describe('DeletePageSchedule API Tests', () => {
     global.fetch = mockFetchWithPublishPermission();
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'nonexistent-page' },
+      params: { org: 'org1', site: 'site1', path: 'nonexistent-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1561,7 +1805,7 @@ describe('DeletePageSchedule API Tests', () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'my-page' },
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
       headers: {
         get: () => null,
       },
@@ -1588,7 +1832,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'my-page' },
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1606,13 +1850,218 @@ describe('DeletePageSchedule API Tests', () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      params: { org: 'unregistered', site: 'site', '*': 'my-page' },
+      params: { org: 'unregistered', site: 'site', path: 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
     const response = await deletePageSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 404);
+  });
+});
+
+describe('DeleteSnapshotSchedule API Tests', () => {
+  function mockFetchWithSnapshotAuth({ authorized = true } = {}) {
+    return async (url) => {
+      if (url.includes('admin.hlx.page/snapshot') && url.endsWith('/main')) {
+        return { ok: authorized };
+      }
+      return { ok: true };
+    };
+  }
+
+  it('should delete a scheduled snapshot successfully', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    let storedSchedule = null;
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth();
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  'main/2025-06-15-12-00-00': {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                  'main/2025-06-16-12-00-00': {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-16T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnvWithCapture);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.snapshotId, 'main/2025-06-15-12-00-00');
+
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['main/2025-06-15-12-00-00'], undefined);
+    assert(storedSchedule['org1--site1']['main/2025-06-16-12-00-00'], 'Other snapshot should remain');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should clean up empty org/site key after last snapshot is deleted', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    let storedSchedule = null;
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth();
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  'main/2025-06-15-12-00-00': {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnvWithCapture);
+    assert.strictEqual(response.status, 200);
+
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'], undefined);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 404 when snapshot is not scheduled', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth();
+
+    const request = {
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/nonexistent-snapshot' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    const errorHeader = response.headers.get('X-Error');
+    assert.strictEqual(response.status, 404);
+    assert.strictEqual(errorHeader, 'No schedule found for this snapshot');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 400 when snapshot ID is missing from URL', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'org1', site: 'site1' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 400);
+  });
+
+  it('should return 401 when no Authorization header is provided', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: () => null,
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 401);
+  });
+
+  it('should return 401 when user does not have snapshot list access', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithSnapshotAuth({ authorized: false });
+
+    const request = {
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
+    assert.strictEqual(response.status, 401);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 404 for unregistered org/site', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const request = {
+      params: { org: 'unregistered', site: 'site', snapshotId: 'main/2025-06-15-12-00-00' },
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    const response = await deleteSnapshotSchedule(request, mockEnv);
     assert.strictEqual(response.status, 404);
   });
 });
