@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/adobe/helix-snapshot-scheduler#readme",
   "devDependencies": {
-    "@adobe/semantic-release-coralogix": "1.1.39",
+    "@adobe/semantic-release-coralogix": "1.1.40",
     "@semantic-release/changelog": "6.0.3",
     "@semantic-release/exec": "6.0.3",
     "@semantic-release/git": "10.0.1",
