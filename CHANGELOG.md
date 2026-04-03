@@ -1,3 +1,20 @@
+# [1.5.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.4...v1.5.0) (2026-04-03)
+
+
+### Bug Fixes
+
+* align snapshot scheduling to the new api format as well ([04e5749](https://github.com/adobe/helix-snapshot-scheduler/commit/04e5749d44f5e953d74430e0dc61a429e3d5ee4b))
+* allows cors for schedule GET call ([6e9e862](https://github.com/adobe/helix-snapshot-scheduler/commit/6e9e8629a95230aa14acaa35b43ff2f8172c21ce))
+* error responses should include cors headers ([3990824](https://github.com/adobe/helix-snapshot-scheduler/commit/3990824e9d49deaf1c5fc1e29a985722b715162b))
+* update apis to be consistent with org/site in the url ([2d56102](https://github.com/adobe/helix-snapshot-scheduler/commit/2d561020d7d6bf81c22ad4de711133d17851cd3d))
+* use named greedy params instead of wildcard for delete routes ([7816ca4](https://github.com/adobe/helix-snapshot-scheduler/commit/7816ca466af73d84950a52e747d321d6e53f2097))
+
+
+### Features
+
+* add delete route for snapshot schedules and standardize api routes ([a9b1736](https://github.com/adobe/helix-snapshot-scheduler/commit/a9b1736bcd3eb5f4f3b699a17bd1e913b876441c))
+* adding delete snapshot schedule to the api route ([068debd](https://github.com/adobe/helix-snapshot-scheduler/commit/068debd04bdff2d95974b5401715d5529d33e8af))
+
 ## [1.4.4](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.3...v1.4.4) (2026-03-17)
 
 
