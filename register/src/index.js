@@ -593,15 +593,14 @@ export async function schedulePage(request, env) {
 
 /**
  * Delete a scheduled page publish.
- * Route: DELETE /schedule/page/:org/:site/*
- * The wildcard captures the page path (which may contain slashes).
+ * Route: DELETE /schedule/page/:org/:site/:path+
+ * The greedy param captures the page path (which may contain slashes).
  * @param {Object} request - The incoming request
  * @param {Object} env - The environment object
  */
 export async function deletePageSchedule(request, env) {
   try {
-    const { org, site } = request.params;
-    const pagePath = request.params['*'];
+    const { org, site, path: pagePath } = request.params;
     if (!org || !site || !pagePath) {
       return createErrorResponse('Invalid URL. Expected /schedule/page/:org/:site/:path', request, 400);
     }
@@ -685,15 +684,14 @@ export async function deletePageSchedule(request, env) {
 
 /**
  * Delete a scheduled snapshot publish.
- * Route: DELETE /schedule/snapshot/:org/:site/*
- * The wildcard captures the snapshot ID (which may contain slashes).
+ * Route: DELETE /schedule/snapshot/:org/:site/:snapshotId+
+ * The greedy param captures the snapshot ID (which may contain slashes).
  * @param {Object} request - The incoming request
  * @param {Object} env - The environment object
  */
 export async function deleteSnapshotSchedule(request, env) {
   try {
-    const { org, site } = request.params;
-    const snapshotId = request.params['*'];
+    const { org, site, snapshotId } = request.params;
     if (!org || !site || !snapshotId) {
       return createErrorResponse('Invalid URL. Expected /schedule/snapshot/:org/:site/:snapshotId', request, 400);
     }
@@ -765,9 +763,9 @@ router.options('/register/:org/:site', (request) => createResponse(null, request
 router.options('/schedule', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page', (request) => createResponse(null, request, { status: 204 }));
-router.options('/schedule/page/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/page/:org/:site/:path+', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/page/:org/:site', (request) => createResponse(null, request, { status: 204 }));
-router.options('/schedule/snapshot/:org/:site/*', (request) => createResponse(null, request, { status: 204 }));
+router.options('/schedule/snapshot/:org/:site/:snapshotId+', (request) => createResponse(null, request, { status: 204 }));
 router.options('/schedule/snapshot/:org/:site', (request) => createResponse(null, request, { status: 204 }));
 
 router.post('/register', async (request, env) => registerRequest(request, env)); // old route for register
@@ -777,8 +775,8 @@ router.post('/schedule', async (request, env) => updateSchedule(request, env)); 
 router.post('/schedule/page', async (request, env) => schedulePage(request, env)); // old route for schedule page
 router.post('/schedule/page/:org/:site', async (request, env) => schedulePage(request, env)); // new route for schedule page
 router.post('/schedule/snapshot/:org/:site', async (request, env) => updateSchedule(request, env)); // new route for schedule snapshot
-router.delete('/schedule/page/:org/:site/*', async (request, env) => deletePageSchedule(request, env)); // new route for delete page schedule
-router.delete('/schedule/snapshot/:org/:site/*', async (request, env) => deleteSnapshotSchedule(request, env)); // new route for delete snapshot schedule
+router.delete('/schedule/page/:org/:site/:path+', async (request, env) => deletePageSchedule(request, env));
+router.delete('/schedule/snapshot/:org/:site/:snapshotId+', async (request, env) => deleteSnapshotSchedule(request, env));
 router.get('/schedule/:org/:site', async (request, env) => getSchedule(request, env));
 // catch all for invalid routes
 router.all('*', (request) => createErrorResponse('404, not found!', request, 404));

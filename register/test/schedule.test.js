@@ -663,7 +663,7 @@ describe('URL Format Route Tests', () => {
     global.fetch = originalFetch;
   });
 
-  it('should route DELETE /schedule/snapshot/:org/:site/* to deleteSnapshotSchedule', async () => {
+  it('should route DELETE /schedule/snapshot/:org/:site/:snapshotId+ to deleteSnapshotSchedule', async () => {
     const { default: worker } = await import('../src/index.js');
     const originalFetch = global.fetch;
     global.fetch = mockFetchForUrlRouteTests();
@@ -676,11 +676,9 @@ describe('URL Format Route Tests', () => {
 
     const response = await worker.fetch(request, env, {});
 
-    // itty-router v5 does not populate params['*'] for wildcard routes, so deleteSnapshotSchedule
-    // returns 400 with the expected error message. Verify the route is wired (not a generic 404)
-    // and that CORS headers are present in the error response.
-    assert.strictEqual(response.status, 400);
-    assert.strictEqual(response.headers.get('X-Error'), 'Invalid URL. Expected /schedule/snapshot/:org/:site/:snapshotId');
+    // The route should reach deleteSnapshotSchedule (not a generic 404).
+    // It may return 404 (unregistered) or 401 depending on mock setup, but not 404 "not found!".
+    assert.notStrictEqual(response.headers.get('X-Error'), '404, not found!');
     assert(response.headers.get('Access-Control-Allow-Methods'), 'CORS headers should be present in error response');
 
     global.fetch = originalFetch;
@@ -1644,7 +1642,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'my-page' },
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1700,7 +1698,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'blog/2025/my-article' },
+      params: { org: 'org1', site: 'site1', path: 'blog/2025/my-article' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1753,7 +1751,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'only-page' },
+      params: { org: 'org1', site: 'site1', path: 'only-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1775,7 +1773,7 @@ describe('DeletePageSchedule API Tests', () => {
     global.fetch = mockFetchWithPublishPermission();
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'nonexistent-page' },
+      params: { org: 'org1', site: 'site1', path: 'nonexistent-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1807,7 +1805,7 @@ describe('DeletePageSchedule API Tests', () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'my-page' },
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
       headers: {
         get: () => null,
       },
@@ -1834,7 +1832,7 @@ describe('DeletePageSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'my-page' },
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1852,7 +1850,7 @@ describe('DeletePageSchedule API Tests', () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
     const request = {
-      params: { org: 'unregistered', site: 'site', '*': 'my-page' },
+      params: { org: 'unregistered', site: 'site', path: 'my-page' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1914,7 +1912,7 @@ describe('DeleteSnapshotSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1970,7 +1968,7 @@ describe('DeleteSnapshotSchedule API Tests', () => {
     };
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -1992,7 +1990,7 @@ describe('DeleteSnapshotSchedule API Tests', () => {
     global.fetch = mockFetchWithSnapshotAuth();
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'main/nonexistent-snapshot' },
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/nonexistent-snapshot' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -2024,7 +2022,7 @@ describe('DeleteSnapshotSchedule API Tests', () => {
     const { deleteSnapshotSchedule } = await import('../src/index.js');
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
       headers: {
         get: () => null,
       },
@@ -2041,7 +2039,7 @@ describe('DeleteSnapshotSchedule API Tests', () => {
     global.fetch = mockFetchWithSnapshotAuth({ authorized: false });
 
     const request = {
-      params: { org: 'org1', site: 'site1', '*': 'main/2025-06-15-12-00-00' },
+      params: { org: 'org1', site: 'site1', snapshotId: 'main/2025-06-15-12-00-00' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
@@ -2057,7 +2055,7 @@ describe('DeleteSnapshotSchedule API Tests', () => {
     const { deleteSnapshotSchedule } = await import('../src/index.js');
 
     const request = {
-      params: { org: 'unregistered', site: 'site', '*': 'main/2025-06-15-12-00-00' },
+      params: { org: 'unregistered', site: 'site', snapshotId: 'main/2025-06-15-12-00-00' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
