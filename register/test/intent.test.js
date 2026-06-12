@@ -241,4 +241,43 @@ describe('verifyScheduleIntent', () => {
     assert.equal(result.ok, true);
     assert.equal(env.kv['nonce--n-reusable'], undefined);
   });
+
+  it('retries log readback once after 500ms when nonce not found on first attempt', async () => {
+    let calls = 0;
+    global.fetch = async (url, opts = {}) => {
+      if (url.startsWith('https://admin.hlx.page/log/')) {
+        assert.equal(opts.headers?.['x-auth-token'], 'test-api-key');
+        calls += 1;
+        if (calls === 1) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            entries: [{
+              route: 'schedule-page-intent',
+              nonce: 'n-late',
+              path: '/foo',
+              user: 'a@b.com',
+              timestamp: Date.now(),
+            }],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-late',
+      route: 'schedule-page-intent',
+      expected: { path: '/foo' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+  });
 });

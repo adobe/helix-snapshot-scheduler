@@ -54,12 +54,20 @@ export async function verifyScheduleIntent({
     }
   }
 
-  // Log readback
-  const { entries, error } = await fetchLogEntries({
-    org, site, apiKey, sinceMs: window,
-  });
-  if (error) {
-    return { ok: false, status: 503, error: 'could not verify schedule intent' };
+  // Log readback — one retry after 500ms to absorb admin log propagation lag
+  let entries = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await fetchLogEntries({
+      org, site, apiKey, sinceMs: window,
+    });
+    if (r.error) return { ok: false, status: 503, error: 'could not verify schedule intent' };
+    entries = r.entries;
+    if (findIntent(entries, { route, nonce })) break;
+    if (attempt === 0) {
+      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
 
   const entry = findIntent(entries, { route, nonce });
