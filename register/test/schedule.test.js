@@ -2644,3 +2644,220 @@ describe('deleteSnapshotSchedule dual-mode', () => {
     global.fetch = originalFetch;
   });
 });
+
+describe('getSchedule dual-mode', () => {
+  function buildEnv() {
+    const kvPutCalls = [];
+    return {
+      env: {
+        R2_BUCKET: {
+          get: async (key) => {
+            if (key === 'schedule.json') {
+              return {
+                json: async () => ({
+                  'org1--site1': {
+                    '/blog/my-article': {
+                      type: 'page',
+                      scheduledPublish: '2025-06-15T12:00:00Z',
+                      userId: 'amol@adobe.com',
+                    },
+                  },
+                }),
+              };
+            }
+            return null;
+          },
+          put: async () => true,
+        },
+        SCHEDULER_KV: {
+          get: async (key) => (key === 'org1--site1--apiKey' ? 'test-api-key' : null),
+          put: async (key, value, options) => {
+            kvPutCalls.push({ key, value, options });
+            return true;
+          },
+        },
+      },
+      kvPutCalls,
+    };
+  }
+
+  function createGetRequest({ params, query = {}, authToken = null }) {
+    return {
+      params,
+      query,
+      headers: {
+        get: (name) => (name === 'Authorization' ? authToken : null),
+      },
+    };
+  }
+
+  it('should return the schedule using log-readback intent verification (Sidekick mode)', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const intentTimestamp = Date.now();
+    const { env } = buildEnv();
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/log/') && (!opts || opts.method === 'GET' || !opts.method)) {
+        return {
+          ok: true,
+          json: async () => ({
+            entries: [{
+              route: 'view-schedule-intent',
+              nonce: 'view-nonce',
+              user: 'amol@adobe.com',
+              timestamp: intentTimestamp,
+            }],
+          }),
+        };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createGetRequest({
+      params: { org: 'org1', site: 'site1' },
+      query: { nonce: 'view-nonce' },
+    });
+
+    const response = await getSchedule(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert(responseData['org1--site1'], 'Should contain org--site key');
+    assert.strictEqual(
+      responseData['org1--site1']['/blog/my-article'].scheduledPublish,
+      '2025-06-15T12:00:00Z',
+    );
+
+    global.fetch = originalFetch;
+  });
+
+  it('should allow the same nonce to be reused within the window (Sidekick mode, not single-use)', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const intentTimestamp = Date.now();
+    const { env, kvPutCalls } = buildEnv();
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/log/') && (!opts || opts.method === 'GET' || !opts.method)) {
+        return {
+          ok: true,
+          json: async () => ({
+            entries: [{
+              route: 'view-schedule-intent',
+              nonce: 'view-nonce',
+              user: 'amol@adobe.com',
+              timestamp: intentTimestamp,
+            }],
+          }),
+        };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createGetRequest({
+      params: { org: 'org1', site: 'site1' },
+      query: { nonce: 'view-nonce' },
+    });
+
+    const response1 = await getSchedule(request, env);
+    assert.strictEqual(response1.status, 200);
+
+    const response2 = await getSchedule(request, env);
+    assert.strictEqual(response2.status, 200);
+
+    // singleUse: false should never reserve the nonce in KV
+    assert.strictEqual(
+      kvPutCalls.some((call) => call.key === 'nonce--view-nonce'),
+      false,
+      'Nonce should not be reserved in KV for a read-only view intent',
+    );
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 401 with expired error when the view-schedule-intent is outside the 30-minute window', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const intentTimestamp = Date.now() - 31 * 60 * 1000;
+    const { env } = buildEnv();
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/log/') && (!opts || opts.method === 'GET' || !opts.method)) {
+        return {
+          ok: true,
+          json: async () => ({
+            entries: [{
+              route: 'view-schedule-intent',
+              nonce: 'view-nonce',
+              user: 'amol@adobe.com',
+              timestamp: intentTimestamp,
+            }],
+          }),
+        };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createGetRequest({
+      params: { org: 'org1', site: 'site1' },
+      query: { nonce: 'view-nonce' },
+    });
+
+    const response = await getSchedule(request, env);
+
+    assert.strictEqual(response.status, 401);
+    assert.match(response.headers.get('X-Error'), /expired/);
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return the schedule for DA mode (Authorization header, no nonce)', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const { env } = buildEnv();
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/snapshot/') && url.endsWith('/main')) {
+        return { ok: true };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createGetRequest({
+      params: { org: 'org1', site: 'site1' },
+      authToken: 'token da-token',
+    });
+
+    const response = await getSchedule(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert(responseData['org1--site1'], 'Should contain org--site key');
+    assert.strictEqual(
+      responseData['org1--site1']['/blog/my-article'].scheduledPublish,
+      '2025-06-15T12:00:00Z',
+    );
+
+    global.fetch = originalFetch;
+  });
+
+  it('should return 401 with missing nonce error when no Authorization and no nonce', async () => {
+    const { getSchedule } = await import('../src/index.js');
+
+    const { env } = buildEnv();
+
+    const request = createGetRequest({
+      params: { org: 'org1', site: 'site1' },
+    });
+
+    const response = await getSchedule(request, env);
+
+    assert.strictEqual(response.status, 401);
+    assert.match(response.headers.get('X-Error'), /missing nonce/);
+  });
+});

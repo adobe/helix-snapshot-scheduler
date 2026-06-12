@@ -377,24 +377,35 @@ export async function updateSchedule(request, env) {
 export async function getSchedule(request, env) {
   try {
     const { org, site } = request.params;
-    if (!org || !site) {
-      return createErrorResponse('Invalid org or site', request, 400);
-    }
+    if (!org || !site) return createErrorResponse('Invalid org or site', request, 400);
+
     const authToken = request.headers.get('Authorization');
-    if (!authToken) {
-      return createErrorResponse('Unauthorized', request, 401);
-    }
-    const authorized = await isAuthorized(authToken, org, site, false);
-    if (!authorized) {
-      return createErrorResponse('Unauthorized', request, 401);
+    if (authToken) {
+      const authorized = await isAuthorized(authToken, org, site, false);
+      if (!authorized) return createErrorResponse('Unauthorized', request, 401);
+    } else {
+      const apiKey = await getApiKey(env, org, site);
+      if (!apiKey) return createErrorResponse('Org/site not registered', request, 404);
+      const nonce = request.query?.nonce;
+      if (!nonce) return createErrorResponse('missing nonce or authorization', request, 401);
+      const result = await verifyScheduleIntent({
+        env,
+        org,
+        site,
+        apiKey,
+        nonce,
+        route: 'view-schedule-intent',
+        expected: {},
+        window: 30 * 60 * 1000,
+        singleUse: false,
+      });
+      if (!result.ok) return createErrorResponse(result.error, request, result.status);
     }
 
     let scheduleData = {};
     try {
-      const existingSchedule = await env.R2_BUCKET.get('schedule.json');
-      if (existingSchedule) {
-        scheduleData = await existingSchedule.json();
-      }
+      const existing = await env.R2_BUCKET.get('schedule.json');
+      if (existing) scheduleData = await existing.json();
     } catch (err) {
       console.warn('Could not read schedule data:', err);
       return createErrorResponse('Could not retrieve schedule data', request, 500);
@@ -408,12 +419,8 @@ export async function getSchedule(request, env) {
       const normalizedPath = queryPath.startsWith('/') ? queryPath : `/${queryPath}`;
       const entry = orgSiteData[normalizedPath];
       if (!entry) {
-        return createResponse(JSON.stringify({
-          scheduled: false,
-          path: normalizedPath,
-        }), request, {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
+        return createResponse(JSON.stringify({ scheduled: false, path: normalizedPath }), request, {
+          status: 200, headers: { 'Content-Type': 'application/json' },
         });
       }
       return createResponse(JSON.stringify({
@@ -422,17 +429,11 @@ export async function getSchedule(request, env) {
         scheduledPublish: entry.scheduledPublish,
         userId: entry.userId,
         type: entry.type,
-      }), request, {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      }), request, { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    return createResponse(JSON.stringify({
-      [orgSiteKey]: orgSiteData,
-    }), request, {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+    return createResponse(JSON.stringify({ [orgSiteKey]: orgSiteData }), request, {
+      status: 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Get schedule failed: ', request, err);
