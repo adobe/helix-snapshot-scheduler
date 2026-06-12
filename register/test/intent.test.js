@@ -13,7 +13,7 @@ import {
   describe, it, beforeEach, afterEach,
 } from 'node:test';
 import assert from 'node:assert';
-import { verifyScheduleIntent, postActionAuditLog } from '../src/intent.js';
+import { verifyScheduleIntent, postActionAuditLog, resolveDaUserId } from '../src/intent.js';
 
 const originalFetch = global.fetch;
 
@@ -335,5 +335,35 @@ describe('postActionAuditLog', () => {
       apiKey: 'k',
       entry: { route: 'scheduled-publish', path: '/foo' },
     });
+  });
+});
+
+describe('resolveDaUserId', () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('returns email from admin profile on success', async () => {
+    global.fetch = async (url, opts) => {
+      assert.equal(url, 'https://admin.hlx.page/profile/o/s');
+      assert.equal(opts.headers.Authorization, 'token abc');
+      return { ok: true, json: async () => ({ email: 'a@b.com' }) };
+    };
+    const email = await resolveDaUserId({ authToken: 'token abc', org: 'o', site: 's' });
+    assert.equal(email, 'a@b.com');
+  });
+
+  it('returns null when profile call fails', async () => {
+    global.fetch = async () => ({ ok: false, status: 401 });
+    const email = await resolveDaUserId({ authToken: 'token x', org: 'o', site: 's' });
+    assert.equal(email, null);
+  });
+
+  it('returns null on network error', async () => {
+    global.fetch = async () => {
+      throw new Error('boom');
+    };
+    const email = await resolveDaUserId({ authToken: 'token x', org: 'o', site: 's' });
+    assert.equal(email, null);
   });
 });

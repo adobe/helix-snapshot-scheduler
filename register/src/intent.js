@@ -122,3 +122,19 @@ export async function postActionAuditLog({
     console.warn('postActionAuditLog failed:', err);
   }
 }
+
+export async function resolveDaUserId({ authToken, org, site }) {
+  if (!authToken) return null;
+  try {
+    const resp = await fetch(`${ADMIN}/profile/${org}/${site}`, {
+      method: 'GET',
+      headers: { Authorization: authToken, Accept: 'application/json' },
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    return json?.email || null;
+  } catch (err) {
+    console.warn('resolveDaUserId failed:', err);
+    return null;
+  }
+}
