@@ -68,5 +68,10 @@ export async function verifyScheduleIntent({
     return { ok: false, status: 401, error: 'schedule intent not found in audit log' };
   }
 
+  // Freshness window
+  if (typeof entry.timestamp !== 'number' || Date.now() - entry.timestamp > window) {
+    return { ok: false, status: 401, error: 'schedule intent has expired' };
+  }
+
   return { ok: true, user: entry.user, timestamp: entry.timestamp };
 }

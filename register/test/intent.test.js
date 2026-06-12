@@ -96,4 +96,29 @@ describe('verifyScheduleIntent', () => {
     assert.equal(result.status, 401);
     assert.match(result.error, /schedule intent not found/);
   });
+
+  it('returns 401 schedule intent has expired when entry timestamp is outside window', async () => {
+    mockAdminLog([{
+      route: 'schedule-page-intent',
+      nonce: 'n-stale',
+      path: '/foo',
+      user: 'a@b.com',
+      timestamp: Date.now() - 10 * 60 * 1000,
+    }]);
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-stale',
+      route: 'schedule-page-intent',
+      expected: { path: '/foo' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 401);
+    assert.match(result.error, /expired/);
+  });
 });
