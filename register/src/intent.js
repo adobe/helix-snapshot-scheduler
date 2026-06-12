@@ -38,7 +38,6 @@ function findIntent(entries, { route, nonce }) {
 
 export async function verifyScheduleIntent({
   env, org, site, apiKey, nonce, route,
-  // eslint-disable-next-line no-unused-vars
   expected, window, singleUse,
 }) {
   if (!nonce) return { ok: false, status: 401, error: 'missing nonce or authorization' };
@@ -71,6 +70,12 @@ export async function verifyScheduleIntent({
   // Freshness window
   if (typeof entry.timestamp !== 'number' || Date.now() - entry.timestamp > window) {
     return { ok: false, status: 401, error: 'schedule intent has expired' };
+  }
+
+  // Payload binding
+  const mismatchKey = Object.keys(expected || {}).find((k) => entry[k] !== expected[k]);
+  if (mismatchKey) {
+    return { ok: false, status: 401, error: 'schedule intent does not match this request' };
   }
 
   return { ok: true, user: entry.user, timestamp: entry.timestamp };

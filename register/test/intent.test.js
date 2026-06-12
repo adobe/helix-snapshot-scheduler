@@ -121,4 +121,52 @@ describe('verifyScheduleIntent', () => {
     assert.equal(result.status, 401);
     assert.match(result.error, /expired/);
   });
+
+  it('returns 401 mismatch when expected.path differs from entry.path', async () => {
+    mockAdminLog([{
+      route: 'schedule-page-intent',
+      nonce: 'n-mm',
+      path: '/foo',
+      scheduledPublish: '2026-06-12T10:30:00Z',
+      user: 'a@b.com',
+      timestamp: Date.now(),
+    }]);
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-mm',
+      route: 'schedule-page-intent',
+      expected: { path: '/bar', scheduledPublish: '2026-06-12T10:30:00Z' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 401);
+    assert.match(result.error, /does not match/);
+  });
+
+  it('passes when expected is empty (view-intent case)', async () => {
+    mockAdminLog([{
+      route: 'view-schedule-intent',
+      nonce: 'n-view',
+      user: 'a@b.com',
+      timestamp: Date.now(),
+    }]);
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-view',
+      route: 'view-schedule-intent',
+      expected: {},
+      window: 30 * 60 * 1000,
+      singleUse: false,
+    });
+    assert.equal(result.ok, true);
+  });
 });
