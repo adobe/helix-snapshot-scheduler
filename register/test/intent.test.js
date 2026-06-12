@@ -169,4 +169,76 @@ describe('verifyScheduleIntent', () => {
     });
     assert.equal(result.ok, true);
   });
+
+  it('reserves nonce in KV after successful single-use verify', async () => {
+    mockAdminLog([{
+      route: 'schedule-page-intent',
+      nonce: 'n-once',
+      path: '/foo',
+      user: 'a@b.com',
+      timestamp: Date.now(),
+    }]);
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-once',
+      route: 'schedule-page-intent',
+      expected: { path: '/foo' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(env.kv['nonce--n-once'], '1');
+  });
+
+  it('rejects replay of a previously used single-use nonce', async () => {
+    mockAdminLog([{
+      route: 'schedule-page-intent',
+      nonce: 'n-replay',
+      path: '/foo',
+      user: 'a@b.com',
+      timestamp: Date.now(),
+    }]);
+    const env = makeEnv({ kv: { 'nonce--n-replay': '1' } });
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-replay',
+      route: 'schedule-page-intent',
+      expected: { path: '/foo' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 401);
+    assert.match(result.error, /already used/);
+  });
+
+  it('does not reserve nonce when singleUse is false (view-intent)', async () => {
+    mockAdminLog([{
+      route: 'view-schedule-intent',
+      nonce: 'n-reusable',
+      user: 'a@b.com',
+      timestamp: Date.now(),
+    }]);
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-reusable',
+      route: 'view-schedule-intent',
+      expected: {},
+      window: 30 * 60 * 1000,
+      singleUse: false,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(env.kv['nonce--n-reusable'], undefined);
+  });
 });

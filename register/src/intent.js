@@ -78,5 +78,13 @@ export async function verifyScheduleIntent({
     return { ok: false, status: 401, error: 'schedule intent does not match this request' };
   }
 
+  if (singleUse) {
+    try {
+      await env.SCHEDULER_KV.put(`nonce--${nonce}`, '1', { expirationTtl: 600 });
+    } catch (err) {
+      console.warn('SCHEDULER_KV.put failed (fail-open):', err);
+    }
+  }
+
   return { ok: true, user: entry.user, timestamp: entry.timestamp };
 }
