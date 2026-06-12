@@ -96,3 +96,29 @@ export async function verifyScheduleIntent({
 
   return { ok: true, user: entry.user, timestamp: entry.timestamp };
 }
+
+export async function postActionAuditLog({
+  org, site, authToken, apiKey, entry,
+}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers.Authorization = authToken;
+  } else if (apiKey) {
+    headers['x-auth-token'] = apiKey;
+  } else {
+    console.warn('postActionAuditLog: no credential available, skipping');
+    return;
+  }
+  try {
+    const resp = await fetch(`${ADMIN}/log/${org}/${site}/main`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ entries: [entry] }),
+    });
+    if (!resp.ok) {
+      console.warn(`postActionAuditLog non-2xx: ${resp.status} ${resp.statusText || ''}`);
+    }
+  } catch (err) {
+    console.warn('postActionAuditLog failed:', err);
+  }
+}

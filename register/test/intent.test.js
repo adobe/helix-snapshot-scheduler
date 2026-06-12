@@ -13,7 +13,7 @@ import {
   describe, it, beforeEach, afterEach,
 } from 'node:test';
 import assert from 'node:assert';
-import { verifyScheduleIntent } from '../src/intent.js';
+import { verifyScheduleIntent, postActionAuditLog } from '../src/intent.js';
 
 const originalFetch = global.fetch;
 
@@ -279,5 +279,61 @@ describe('verifyScheduleIntent', () => {
     });
     assert.equal(result.ok, true);
     assert.equal(calls, 2);
+  });
+});
+
+describe('postActionAuditLog', () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('uses Authorization header in DA mode', async () => {
+    let captured;
+    global.fetch = async (url, opts) => {
+      captured = { url, opts };
+      return { ok: true, status: 201 };
+    };
+    await postActionAuditLog({
+      org: 'o',
+      site: 's',
+      authToken: 'token abc',
+      apiKey: 'fallback-key',
+      entry: { route: 'scheduled-publish', path: '/foo', triggeredBy: 'a@b.com' },
+    });
+    assert.equal(captured.url, 'https://admin.hlx.page/log/o/s/main');
+    assert.equal(captured.opts.method, 'POST');
+    assert.equal(captured.opts.headers.Authorization, 'token abc');
+    assert.equal(captured.opts.headers['x-auth-token'], undefined);
+    const body = JSON.parse(captured.opts.body);
+    assert.equal(body.entries.length, 1);
+    assert.equal(body.entries[0].triggeredBy, 'a@b.com');
+  });
+
+  it('uses x-auth-token in Sidekick mode (no authToken)', async () => {
+    let captured;
+    global.fetch = async (url, opts) => {
+      captured = { url, opts };
+      return { ok: true, status: 201 };
+    };
+    await postActionAuditLog({
+      org: 'o',
+      site: 's',
+      authToken: null,
+      apiKey: 'stored-api-key',
+      entry: { route: 'scheduled-publish', path: '/foo', triggeredBy: 'a@b.com' },
+    });
+    assert.equal(captured.opts.headers['x-auth-token'], 'stored-api-key');
+    assert.equal(captured.opts.headers.Authorization, undefined);
+  });
+
+  it('soft-fails on admin log POST failure', async () => {
+    global.fetch = async () => ({ ok: false, status: 500, statusText: 'oops' });
+    await postActionAuditLog({
+      org: 'o',
+      site: 's',
+      authToken: 'token x',
+      apiKey: 'k',
+      entry: { route: 'scheduled-publish', path: '/foo' },
+    });
   });
 });
