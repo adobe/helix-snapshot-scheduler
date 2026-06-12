@@ -1,0 +1,72 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+/* eslint-disable no-console */
+
+const ADMIN = 'https://admin.hlx.page';
+
+async function fetchLogEntries({
+  org, site, apiKey, sinceMs,
+}) {
+  const url = `${ADMIN}/log/${org}/${site}/main?since=${sinceMs}`;
+  const resp = await fetch(url, {
+    method: 'GET',
+    headers: { 'x-auth-token': apiKey, Accept: 'application/json' },
+  });
+  if (!resp.ok) {
+    return { error: `admin log GET failed: ${resp.status}` };
+  }
+  try {
+    const json = await resp.json();
+    return { entries: Array.isArray(json?.entries) ? json.entries : [] };
+  } catch {
+    return { error: 'admin log GET returned invalid JSON' };
+  }
+}
+
+function findIntent(entries, { route, nonce }) {
+  return entries.find((e) => e?.route === route && e?.nonce === nonce);
+}
+
+export async function verifyScheduleIntent({
+  env, org, site, apiKey, nonce, route,
+  // eslint-disable-next-line no-unused-vars
+  expected, window, singleUse,
+}) {
+  if (!nonce) return { ok: false, status: 401, error: 'missing nonce or authorization' };
+  if (!apiKey) return { ok: false, status: 503, error: 'scheduler not properly registered, contact your admin' };
+
+  // Single-use replay check
+  if (singleUse) {
+    try {
+      const used = await env.SCHEDULER_KV.get(`nonce--${nonce}`);
+      if (used) return { ok: false, status: 401, error: 'schedule intent already used' };
+    } catch (err) {
+      console.warn('SCHEDULER_KV.get failed:', err);
+      return { ok: false, status: 500, error: 'could not verify schedule intent' };
+    }
+  }
+
+  // Log readback
+  const { entries, error } = await fetchLogEntries({
+    org, site, apiKey, sinceMs: window,
+  });
+  if (error) {
+    return { ok: false, status: 503, error: 'could not verify schedule intent' };
+  }
+
+  const entry = findIntent(entries, { route, nonce });
+  if (!entry) {
+    return { ok: false, status: 401, error: 'schedule intent not found in audit log' };
+  }
+
+  return { ok: true, user: entry.user, timestamp: entry.timestamp };
+}
