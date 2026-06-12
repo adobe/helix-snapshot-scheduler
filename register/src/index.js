@@ -687,46 +687,63 @@ export async function deleteSnapshotSchedule(request, env) {
     if (!org || !site || !snapshotId) {
       return createErrorResponse('Invalid URL. Expected /schedule/snapshot/:org/:site/:snapshotId', request, 400);
     }
-
     const apiKey = await getApiKey(env, org, site);
-    if (!apiKey) {
-      return createErrorResponse('Org/site not registered', request, 404);
-    }
+    if (!apiKey) return createErrorResponse('Org/site not registered', request, 404);
 
     const authToken = request.headers.get('Authorization');
-    if (!authToken) {
-      return createErrorResponse('Unauthorized', request, 401);
-    }
-    const authorized = await isAuthorized(authToken, org, site, false);
-    if (!authorized) {
-      return createErrorResponse('Unauthorized', request, 401);
+    let resolvedUserId;
+
+    if (authToken) {
+      const authorized = await isAuthorized(authToken, org, site, false);
+      if (!authorized) return createErrorResponse('Unauthorized', request, 401);
+      resolvedUserId = await resolveDaUserId({ authToken, org, site });
+    } else {
+      const nonce = request.query?.nonce;
+      if (!nonce) return createErrorResponse('missing nonce or authorization', request, 401);
+      const result = await verifyScheduleIntent({
+        env,
+        org,
+        site,
+        apiKey,
+        nonce,
+        route: 'delete-snapshot-schedule-intent',
+        expected: { snapshotId },
+        window: 5 * 60 * 1000,
+        singleUse: true,
+      });
+      if (!result.ok) return createErrorResponse(result.error, request, result.status);
+      resolvedUserId = result.user;
     }
 
     let scheduleData = {};
     try {
-      const existingSchedule = await env.R2_BUCKET.get('schedule.json');
-      if (existingSchedule) {
-        scheduleData = await existingSchedule.json();
-      }
+      const existing = await env.R2_BUCKET.get('schedule.json');
+      if (existing) scheduleData = await existing.json();
     } catch (err) {
       console.warn('Could not read existing schedule data:', err);
       return createErrorResponse('Could not retrieve schedule data', request, 500);
     }
-
     const orgSiteKey = `${org}--${site}`;
     if (!scheduleData[orgSiteKey] || !scheduleData[orgSiteKey][snapshotId]) {
       return createErrorResponse('No schedule found for this snapshot', request, 404);
     }
-
     delete scheduleData[orgSiteKey][snapshotId];
-
     if (Object.keys(scheduleData[orgSiteKey]).length === 0) {
       delete scheduleData[orgSiteKey];
     }
-
     await env.R2_BUCKET.put('schedule.json', JSON.stringify(scheduleData, null, 2));
 
-    console.log(`Snapshot schedule deleted for ${orgSiteKey}: ${snapshotId}`);
+    await postActionAuditLog({
+      org,
+      site,
+      authToken,
+      apiKey,
+      entry: {
+        route: 'deleted-scheduled-snapshot-publish',
+        snapshotId,
+        triggeredBy: resolvedUserId,
+      },
+    });
 
     return createResponse(JSON.stringify({
       success: true,
@@ -736,9 +753,7 @@ export async function deleteSnapshotSchedule(request, env) {
       snapshotId,
     }), request, {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Delete snapshot schedule failed: ', request, err);

@@ -2452,3 +2452,195 @@ describe('deletePageSchedule dual-mode', () => {
     global.fetch = originalFetch;
   });
 });
+
+describe('deleteSnapshotSchedule dual-mode', () => {
+  it('should resolve triggeredBy via profile lookup and post a new action audit (DA mode)', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const snapshotId = 'snap-x';
+
+    let storedSchedule = null;
+
+    const env = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  [snapshotId]: {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const auditPostCalls = [];
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/snapshot/') && url.endsWith('/main')) {
+        return { ok: true };
+      }
+      if (url.includes('admin.hlx.page/profile/')) {
+        return {
+          ok: true,
+          json: async () => ({ email: 'da-user@adobe.com' }),
+        };
+      }
+      if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
+        auditPostCalls.push({ url, opts });
+        return { ok: true, status: 201 };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createDeleteRequest({
+      params: { org: 'org1', site: 'site1', snapshotId },
+      authToken: 'token da-token',
+    });
+
+    const response = await deleteSnapshotSchedule(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.snapshotId, snapshotId);
+
+    // R2 entry removed
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'], undefined);
+
+    // Action audit log POST
+    const auditCall = auditPostCalls.find((call) => call.url.includes('/log/org1/site1/main'));
+    assert(auditCall, 'Action audit log POST should be made');
+    const auditBody = JSON.parse(auditCall.opts.body);
+    const auditEntry = auditBody.entries[0];
+    assert.strictEqual(auditEntry.route, 'deleted-scheduled-snapshot-publish');
+    assert.strictEqual(auditEntry.snapshotId, snapshotId);
+    assert.strictEqual(auditEntry.triggeredBy, 'da-user@adobe.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should delete a scheduled snapshot using log-readback intent verification (Sidekick mode)', async () => {
+    const { deleteSnapshotSchedule } = await import('../src/index.js');
+
+    const snapshotId = 'snap-x';
+    const intentTimestamp = Date.now();
+
+    let storedSchedule = null;
+    const kvPutCalls = [];
+
+    const env = {
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  [snapshotId]: {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'amol@adobe.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+      SCHEDULER_KV: {
+        get: async (key) => {
+          if (key === 'org1--site1--apiKey') {
+            return 'test-api-key';
+          }
+          if (key === 'nonce--sk-snap-nonce') {
+            return null;
+          }
+          return null;
+        },
+        put: async (key, value, options) => {
+          kvPutCalls.push({ key, value, options });
+          return true;
+        },
+      },
+    };
+
+    const auditPostCalls = [];
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/log/') && (!opts || opts.method === 'GET' || !opts.method)) {
+        return {
+          ok: true,
+          json: async () => ({
+            entries: [{
+              route: 'delete-snapshot-schedule-intent',
+              nonce: 'sk-snap-nonce',
+              snapshotId,
+              user: 'sk-user@adobe.com',
+              timestamp: intentTimestamp,
+            }],
+          }),
+        };
+      }
+      if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
+        auditPostCalls.push({ url, opts });
+        return { ok: true, status: 201 };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createDeleteRequest({
+      params: { org: 'org1', site: 'site1', snapshotId },
+      query: { nonce: 'sk-snap-nonce' },
+    });
+
+    const response = await deleteSnapshotSchedule(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.snapshotId, snapshotId);
+
+    // R2 entry removed
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'], undefined);
+
+    // Nonce reservation happened
+    assert(kvPutCalls.some((call) => call.key === 'nonce--sk-snap-nonce'), 'Nonce should be reserved in KV');
+
+    // Action audit log POST
+    const auditCall = auditPostCalls.find((call) => call.url.includes('/log/org1/site1/main'));
+    assert(auditCall, 'Action audit log POST should be made');
+    const auditBody = JSON.parse(auditCall.opts.body);
+    const auditEntry = auditBody.entries[0];
+    assert.strictEqual(auditEntry.route, 'deleted-scheduled-snapshot-publish');
+    assert.strictEqual(auditEntry.snapshotId, snapshotId);
+    assert.strictEqual(auditEntry.triggeredBy, 'sk-user@adobe.com');
+
+    global.fetch = originalFetch;
+  });
+});
