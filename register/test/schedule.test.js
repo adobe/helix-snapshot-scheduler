@@ -2131,6 +2131,18 @@ function createSidekickRequest({ params, body }) {
   };
 }
 
+// Build a fake itty-router-style DELETE request: optional Authorization header,
+// .params, and optional .query (no body for DELETE requests)
+function createDeleteRequest({ params, query = {}, authToken = null }) {
+  return {
+    params,
+    query,
+    headers: {
+      get: (name) => (name === 'Authorization' ? authToken : null),
+    },
+  };
+}
+
 describe('schedulePage Sidekick mode', () => {
   it('should schedule a page using log-readback intent verification when no Authorization header is present', async () => {
     const { schedulePage } = await import('../src/index.js');
@@ -2235,6 +2247,207 @@ describe('schedulePage Sidekick mode', () => {
     assert.strictEqual(auditEntry.route, 'scheduled-publish');
     assert.strictEqual(auditEntry.path, '/welcome');
     assert.strictEqual(auditEntry.triggeredBy, 'amol@adobe.com');
+
+    global.fetch = originalFetch;
+  });
+});
+
+describe('deletePageSchedule dual-mode', () => {
+  it('should delete a scheduled page using log-readback intent verification (Sidekick mode)', async () => {
+    const { deletePageSchedule } = await import('../src/index.js');
+
+    const intentTimestamp = Date.now();
+    const normalizedPath = '/welcome';
+
+    let storedSchedule = null;
+    const kvPutCalls = [];
+
+    const env = {
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  [normalizedPath]: {
+                    type: 'page',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'amol@adobe.com',
+                  },
+                  '/other-page': {
+                    type: 'page',
+                    scheduledPublish: '2025-06-16T12:00:00Z',
+                    userId: 'amol@adobe.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+      SCHEDULER_KV: {
+        get: async (key) => {
+          if (key === 'org1--site1--apiKey') {
+            return 'test-api-key';
+          }
+          if (key === 'nonce--sk-del-nonce') {
+            return null;
+          }
+          return null;
+        },
+        put: async (key, value, options) => {
+          kvPutCalls.push({ key, value, options });
+          return true;
+        },
+      },
+    };
+
+    const auditPostCalls = [];
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/log/') && (!opts || opts.method === 'GET' || !opts.method)) {
+        return {
+          ok: true,
+          json: async () => ({
+            entries: [{
+              route: 'delete-page-schedule-intent',
+              nonce: 'sk-del-nonce',
+              path: normalizedPath,
+              user: 'amol@adobe.com',
+              timestamp: intentTimestamp,
+            }],
+          }),
+        };
+      }
+      if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
+        auditPostCalls.push({ url, opts });
+        return { ok: true, status: 201 };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createDeleteRequest({
+      params: { org: 'org1', site: 'site1', path: 'welcome' },
+      query: { nonce: 'sk-del-nonce' },
+    });
+
+    const response = await deletePageSchedule(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.path, normalizedPath);
+
+    // R2 rewritten without the deleted path
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'][normalizedPath], undefined);
+    assert(storedSchedule['org1--site1']['/other-page'], 'Other page should remain');
+
+    // Nonce reservation happened
+    assert(kvPutCalls.some((call) => call.key === 'nonce--sk-del-nonce'), 'Nonce should be reserved in KV');
+
+    // Action audit log POST
+    const auditCall = auditPostCalls.find((call) => call.url.includes('/log/org1/site1/main'));
+    assert(auditCall, 'Action audit log POST should be made');
+    const auditBody = JSON.parse(auditCall.opts.body);
+    const auditEntry = auditBody.entries[0];
+    assert.strictEqual(auditEntry.route, 'deleted-scheduled-publish');
+    assert.strictEqual(auditEntry.path, normalizedPath);
+    assert.strictEqual(auditEntry.triggeredBy, 'amol@adobe.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should resolve triggeredBy via profile lookup in DA mode', async () => {
+    const { deletePageSchedule } = await import('../src/index.js');
+
+    const normalizedPath = '/my-page';
+
+    let storedSchedule = null;
+
+    const env = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  [normalizedPath]: {
+                    type: 'page',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    const auditPostCalls = [];
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/status/')) {
+        return {
+          ok: true,
+          json: async () => ({
+            live: { permissions: ['write'] },
+          }),
+        };
+      }
+      if (url.includes('admin.hlx.page/profile/')) {
+        return {
+          ok: true,
+          json: async () => ({ email: 'da-user@adobe.com' }),
+        };
+      }
+      if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
+        auditPostCalls.push({ url, opts });
+        return { ok: true, status: 201 };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createDeleteRequest({
+      params: { org: 'org1', site: 'site1', path: 'my-page' },
+      authToken: 'token da-token',
+    });
+
+    const response = await deletePageSchedule(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+    assert.strictEqual(responseData.path, normalizedPath);
+
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1'], undefined);
+
+    const auditCall = auditPostCalls.find((call) => call.url.includes('/log/org1/site1/main'));
+    assert(auditCall, 'Action audit log POST should be made');
+    const auditBody = JSON.parse(auditCall.opts.body);
+    const auditEntry = auditBody.entries[0];
+    assert.strictEqual(auditEntry.route, 'deleted-scheduled-publish');
+    assert.strictEqual(auditEntry.path, normalizedPath);
+    assert.strictEqual(auditEntry.triggeredBy, 'da-user@adobe.com');
 
     global.fetch = originalFetch;
   });

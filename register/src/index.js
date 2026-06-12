@@ -12,7 +12,7 @@
 /* eslint-disable no-console */
 
 import { IttyRouter } from 'itty-router';
-import { verifyScheduleIntent, postActionAuditLog } from './intent.js';
+import { verifyScheduleIntent, postActionAuditLog, resolveDaUserId } from './intent.js';
 
 // Global environment variable
 // eslint-disable-next-line no-unused-vars
@@ -595,62 +595,68 @@ export async function deletePageSchedule(request, env) {
     const normalizedPath = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
 
     const apiKey = await getApiKey(env, org, site);
-    if (!apiKey) {
-      return createErrorResponse('Org/site not registered', request, 404);
-    }
+    if (!apiKey) return createErrorResponse('Org/site not registered', request, 404);
 
     const authToken = request.headers.get('Authorization');
-    if (!authToken) {
-      return createErrorResponse('Unauthorized', request, 401);
-    }
-    const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
-    if (!canPublish) {
-      return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
+    let resolvedUserId;
+
+    if (authToken) {
+      // DA mode — existing permission check, plus profile lookup for triggeredBy
+      const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
+      if (!canPublish) {
+        return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
+      }
+      resolvedUserId = await resolveDaUserId({ authToken, org, site });
+    } else {
+      // Sidekick mode
+      const nonce = request.query?.nonce;
+      if (!nonce) return createErrorResponse('missing nonce or authorization', request, 401);
+      const result = await verifyScheduleIntent({
+        env,
+        org,
+        site,
+        apiKey,
+        nonce,
+        route: 'delete-page-schedule-intent',
+        expected: { path: normalizedPath },
+        window: 5 * 60 * 1000,
+        singleUse: true,
+      });
+      if (!result.ok) return createErrorResponse(result.error, request, result.status);
+      resolvedUserId = result.user;
     }
 
+    // R2 delete — shared
     let scheduleData = {};
     try {
-      const existingSchedule = await env.R2_BUCKET.get('schedule.json');
-      if (existingSchedule) {
-        scheduleData = await existingSchedule.json();
-      }
+      const existing = await env.R2_BUCKET.get('schedule.json');
+      if (existing) scheduleData = await existing.json();
     } catch (err) {
       console.warn('Could not read existing schedule data:', err);
       return createErrorResponse('Could not retrieve schedule data', request, 500);
     }
-
     const orgSiteKey = `${org}--${site}`;
     if (!scheduleData[orgSiteKey] || !scheduleData[orgSiteKey][normalizedPath]) {
       return createErrorResponse('No schedule found for this path', request, 404);
     }
-
     delete scheduleData[orgSiteKey][normalizedPath];
-
     if (Object.keys(scheduleData[orgSiteKey]).length === 0) {
       delete scheduleData[orgSiteKey];
     }
-
     await env.R2_BUCKET.put('schedule.json', JSON.stringify(scheduleData, null, 2));
 
-    console.log(`Page schedule deleted for ${orgSiteKey}: ${normalizedPath}`);
-
-    const auditLogResponse = await fetch(`https://admin.hlx.page/log/${org}/${site}/main`, {
-      method: 'POST',
-      headers: {
-        Authorization: `${authToken}`,
-        'Content-Type': 'application/json',
+    // Action audit — both modes, with triggeredBy
+    await postActionAuditLog({
+      org,
+      site,
+      authToken,
+      apiKey,
+      entry: {
+        route: 'deleted-scheduled-publish',
+        path: normalizedPath,
+        triggeredBy: resolvedUserId,
       },
-      body: JSON.stringify({
-        entries: [{
-          timestamp: Date.now(),
-          route: 'deleted-scheduled-publish',
-          path: normalizedPath,
-        }],
-      }),
-    }).catch((err) => console.error('Failed to post audit log:', err));
-    if (auditLogResponse && !auditLogResponse.ok) {
-      console.error('Failed to post audit log:', auditLogResponse.status, auditLogResponse.statusText);
-    }
+    });
 
     return createResponse(JSON.stringify({
       success: true,
@@ -660,9 +666,7 @@ export async function deletePageSchedule(request, env) {
       path: normalizedPath,
     }), request, {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Delete page schedule failed: ', request, err);
