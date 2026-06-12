@@ -2119,3 +2119,123 @@ describe('Authorization Tests', () => {
     global.fetch = originalFetch;
   });
 });
+
+// Build a fake itty-router-style request: no Authorization header, with .params and .json()
+function createSidekickRequest({ params, body }) {
+  return {
+    params,
+    headers: {
+      get: () => null,
+    },
+    json: async () => body,
+  };
+}
+
+describe('schedulePage Sidekick mode', () => {
+  it('should schedule a page using log-readback intent verification when no Authorization header is present', async () => {
+    const { schedulePage } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const intentTimestamp = Date.now();
+
+    const kvPutCalls = [];
+    let storedSchedule = null;
+
+    const env = {
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return null;
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+      SCHEDULER_KV: {
+        get: async (key) => {
+          if (key === 'org1--site1--apiKey') {
+            return 'test-api-key';
+          }
+          if (key === 'nonce--sk-nonce') {
+            return null;
+          }
+          return null;
+        },
+        put: async (key, value, options) => {
+          kvPutCalls.push({ key, value, options });
+          return true;
+        },
+      },
+    };
+
+    const auditPostCalls = [];
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/log/') && (!opts || opts.method === 'GET' || !opts.method)) {
+        return {
+          ok: true,
+          json: async () => ({
+            entries: [{
+              route: 'schedule-page-intent',
+              nonce: 'sk-nonce',
+              path: '/welcome',
+              scheduledPublish: validFutureDate,
+              user: 'amol@adobe.com',
+              timestamp: intentTimestamp,
+            }],
+          }),
+        };
+      }
+      if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
+        auditPostCalls.push({ url, opts });
+        return { ok: true, status: 201 };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const request = createSidekickRequest({
+      params: { org: 'org1', site: 'site1' },
+      body: {
+        path: '/welcome',
+        scheduledPublish: validFutureDate,
+        nonce: 'sk-nonce',
+      },
+    });
+
+    const response = await schedulePage(request, env);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.success, true);
+
+    // R2 write shape
+    assert(storedSchedule, 'Schedule should be stored');
+    const entry = storedSchedule['org1--site1']['/welcome'];
+    assert(entry, 'Page entry should be in schedule');
+    assert.deepStrictEqual(entry, {
+      type: 'page',
+      scheduledPublish: validFutureDate,
+      userId: 'amol@adobe.com',
+    });
+
+    // Nonce reservation happened
+    assert(kvPutCalls.some((call) => call.key === 'nonce--sk-nonce'), 'Nonce should be reserved in KV');
+
+    // Action audit log POST
+    const auditCall = auditPostCalls.find((call) => call.url.includes('/log/org1/site1/main'));
+    assert(auditCall, 'Action audit log POST should be made');
+    const auditBody = JSON.parse(auditCall.opts.body);
+    const auditEntry = auditBody.entries[0];
+    assert.strictEqual(auditEntry.route, 'scheduled-publish');
+    assert.strictEqual(auditEntry.path, '/welcome');
+    assert.strictEqual(auditEntry.triggeredBy, 'amol@adobe.com');
+
+    global.fetch = originalFetch;
+  });
+});
