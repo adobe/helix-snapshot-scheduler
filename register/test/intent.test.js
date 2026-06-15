@@ -347,7 +347,7 @@ describe('resolveDaUserId', () => {
     global.fetch = async (url, opts) => {
       assert.equal(url, 'https://admin.hlx.page/profile/o/s');
       assert.equal(opts.headers.Authorization, 'token abc');
-      return { ok: true, json: async () => ({ email: 'a@b.com' }) };
+      return { ok: true, json: async () => ({ profile: { email: 'a@b.com' } }) };
     };
     const email = await resolveDaUserId({ authToken: 'token abc', org: 'o', site: 's' });
     assert.equal(email, 'a@b.com');

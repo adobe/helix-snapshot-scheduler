@@ -13,10 +13,32 @@
 
 const ADMIN = 'https://admin.hlx.page';
 
+/**
+ * Convert a millisecond duration into the short-notation timespan string that
+ * helix-admin's `parseTimespan()` accepts on the log `since` query param
+ * (a number followed by a `s`/`m`/`h`/`d` unit, e.g. `5m`, `30m`, `1h`).
+ * Picks the largest unit that divides the duration evenly so values stay whole.
+ */
+function msToTimespan(ms) {
+  const units = [
+    ['d', 86400000],
+    ['h', 3600000],
+    ['m', 60000],
+    ['s', 1000],
+  ];
+  for (const [unit, size] of units) {
+    if (ms >= size && ms % size === 0) {
+      return `${ms / size}${unit}`;
+    }
+  }
+  // Fall back to whole seconds (rounded up) for sub-second or odd durations.
+  return `${Math.max(1, Math.ceil(ms / 1000))}s`;
+}
+
 async function fetchLogEntries({
   org, site, apiKey, sinceMs,
 }) {
-  const url = `${ADMIN}/log/${org}/${site}/main?since=${sinceMs}`;
+  const url = `${ADMIN}/log/${org}/${site}/main?since=${msToTimespan(sinceMs)}`;
   const resp = await fetch(url, {
     method: 'GET',
     headers: { 'x-auth-token': apiKey, Accept: 'application/json' },
@@ -132,7 +154,9 @@ export async function resolveDaUserId({ authToken, org, site }) {
     });
     if (!resp.ok) return null;
     const json = await resp.json();
-    return json?.email || null;
+    // helix-admin's profile handler nests the user under `profile`, e.g.
+    // { profile: { email, name, ... }, links: { ... } }.
+    return json?.profile?.email || null;
   } catch (err) {
     console.warn('resolveDaUserId failed:', err);
     return null;

@@ -2416,7 +2416,7 @@ describe('deletePageSchedule dual-mode', () => {
       if (url.includes('admin.hlx.page/profile/')) {
         return {
           ok: true,
-          json: async () => ({ email: 'da-user@adobe.com' }),
+          json: async () => ({ profile: { email: 'da-user@adobe.com' } }),
         };
       }
       if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
@@ -2499,7 +2499,7 @@ describe('deleteSnapshotSchedule dual-mode', () => {
       if (url.includes('admin.hlx.page/profile/')) {
         return {
           ok: true,
-          json: async () => ({ email: 'da-user@adobe.com' }),
+          json: async () => ({ profile: { email: 'da-user@adobe.com' } }),
         };
       }
       if (url.includes('admin.hlx.page/log/') && opts && opts.method === 'POST') {
