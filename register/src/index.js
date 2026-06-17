@@ -584,13 +584,16 @@ export async function schedulePage(request, env) {
  * Delete a scheduled page publish.
  * Route: DELETE /schedule/page/:org/:site/:path+
  * The greedy param captures the page path (which may contain slashes).
+ * For the home page the URL ends in `/:site/`, which itty-router matches
+ * with an empty `path` param — treat that as `/`.
  * @param {Object} request - The incoming request
  * @param {Object} env - The environment object
  */
 export async function deletePageSchedule(request, env) {
   try {
-    const { org, site, path: pagePath } = request.params;
-    if (!org || !site || !pagePath) {
+    const { org, site } = request.params;
+    const pagePath = request.params.path || '/';
+    if (!org || !site) {
       return createErrorResponse('Invalid URL. Expected /schedule/page/:org/:site/:path', request, 400);
     }
     const normalizedPath = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;

@@ -1787,18 +1787,65 @@ describe('DeletePageSchedule API Tests', () => {
     global.fetch = originalFetch;
   });
 
-  it('should return 400 when path is missing from URL', async () => {
+  it('should delete the home page schedule when URL path param is empty (e.g. /schedule/page/:org/:site/)', async () => {
     const { deletePageSchedule } = await import('../src/index.js');
 
+    let storedSchedule = null;
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchWithPublishPermission();
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  '/': {
+                    type: 'page',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                  '/keep-me': {
+                    type: 'page',
+                    scheduledPublish: '2025-06-15T12:00:00Z',
+                    userId: 'user@example.com',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') {
+            storedSchedule = JSON.parse(value);
+          }
+          return true;
+        },
+      },
+    };
+
+    // itty-router resolves `/schedule/page/:org/:site/:path+` against
+    // `/schedule/page/org1/site1/` with `path: ""` — handler must treat that as `/`.
     const request = {
-      params: { org: 'org1', site: 'site1' },
+      params: { org: 'org1', site: 'site1', path: '' },
       headers: {
         get: (name) => (name === 'Authorization' ? 'token test-token' : null),
       },
     };
 
-    const response = await deletePageSchedule(request, mockEnv);
-    assert.strictEqual(response.status, 400);
+    const response = await deletePageSchedule(request, mockEnvWithCapture);
+    const responseData = await response.json();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.path, '/');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['/'], undefined);
+    assert(storedSchedule['org1--site1']['/keep-me'], 'Other entries should be preserved');
+
+    global.fetch = originalFetch;
   });
 
   it('should return 401 when no Authorization header is provided', async () => {
