@@ -1,3 +1,27 @@
+# [1.6.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.5.0...v1.6.0) (2026-06-23)
+
+
+### Bug Fixes
+
+* delete homepage schedule bug ([bc211b5](https://github.com/adobe/helix-snapshot-scheduler/commit/bc211b59b74038addb5522a5b6c7f1eba0caef27))
+* since qp and profile email ([4dc69ae](https://github.com/adobe/helix-snapshot-scheduler/commit/4dc69ae7a82e4e68161389456e8473cc4e399f73))
+
+
+### Features
+
+* **deletePageSchedule:** dual-mode + triggeredBy in action audit ([cc8ac12](https://github.com/adobe/helix-snapshot-scheduler/commit/cc8ac1263701248ac0f4089240aca69fd151792c))
+* **deleteSnapshotSchedule:** dual-mode + new action audit with triggeredBy ([c552214](https://github.com/adobe/helix-snapshot-scheduler/commit/c5522145043cd431bdac01dfa54a15c1796bb318))
+* **getSchedule:** dual-mode with reusable view-schedule-intent nonce ([1d892fe](https://github.com/adobe/helix-snapshot-scheduler/commit/1d892fe478041f11202dae875176cb97e0d0acf3))
+* **intent:** add postActionAuditLog helper supporting both auth modes ([ddc8113](https://github.com/adobe/helix-snapshot-scheduler/commit/ddc811354d8dfc3fbe744f43593ced03bab9130f))
+* **intent:** add resolveDaUserId helper for DA mode action audits ([315635b](https://github.com/adobe/helix-snapshot-scheduler/commit/315635b9c7159df35e83de8c3b3f207e44890cab))
+* **intent:** add verifyScheduleIntent happy path and not-found handling ([efc845c](https://github.com/adobe/helix-snapshot-scheduler/commit/efc845c856b610d7a292b68efd0221cd5c4d9d11))
+* **intent:** enforce freshness window on schedule intent ([a242adb](https://github.com/adobe/helix-snapshot-scheduler/commit/a242adb47554c9b899cc9a4d3f9f005cf7adc01f))
+* **intent:** enforce payload binding on schedule intent ([1a70e88](https://github.com/adobe/helix-snapshot-scheduler/commit/1a70e88894b5fb1e183d5022e031887ce270f3c7))
+* **intent:** reserve single-use nonces in KV with 10-min TTL ([047f7e6](https://github.com/adobe/helix-snapshot-scheduler/commit/047f7e638f334e5a077382115eb9b7a3fc8207dc))
+* **intent:** retry log readback once after 500ms on miss ([2825170](https://github.com/adobe/helix-snapshot-scheduler/commit/2825170b7eb632ed5278bb64832d453eafba513c))
+* page scheduling for non-DA EDS sites ([dd5a8c0](https://github.com/adobe/helix-snapshot-scheduler/commit/dd5a8c01c854536c12b3ca3d846a6cae579dee7a))
+* **schedulePage:** dual-mode auth via Sidekick intent or DA Authorization ([2a3e074](https://github.com/adobe/helix-snapshot-scheduler/commit/2a3e074f9d39b441a6739a5804a568393eda02b3))
+
 # [1.5.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.4.4...v1.5.0) (2026-04-03)
 
 
