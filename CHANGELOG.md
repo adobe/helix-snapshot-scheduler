@@ -1,3 +1,12 @@
+## [1.6.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.6.0...v1.6.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* add console errors for easier debugging ([88f0771](https://github.com/adobe/helix-snapshot-scheduler/commit/88f0771a9086e4b9ce0131d0d77b076714074e56))
+* aem-agentic-plugins token processing ([e525078](https://github.com/adobe/helix-snapshot-scheduler/commit/e525078ee2da8dcd4803cbbb4c1109527d442f71))
+* resolve auth token if no userId ([3d3334a](https://github.com/adobe/helix-snapshot-scheduler/commit/3d3334a126d5dc1dd386f4d1955679288d101497))
+
 # [1.6.0](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.5.0...v1.6.0) (2026-06-23)
 
 
