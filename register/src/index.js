@@ -73,7 +73,9 @@ function createResponse(body, request, options = {}) {
 // Helper function to create error Response with X-Error header and add console logs
 // Pass request for CORS-enabled endpoints, or null for non-CORS endpoints
 function createErrorResponse(errorMessage, request, statusCode) {
-  const context = request?.method && request?.url ? ` ${request.method} ${request.url}` : '';
+  const context = request?.method && request?.url
+    ? ` ${request.method} ${new URL(request.url).pathname}`
+    : '';
   const line = `[error ${statusCode}]${context} ${errorMessage}`;
   if (statusCode >= 500) {
     console.error(line);
@@ -239,7 +241,7 @@ export async function registerRequest(request, env) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Register Request failed: ', request, err);
+    console.error('Register Request failed: ', err);
     return createErrorResponse('Register Request failed: Internal server error', request, 500);
   }
 }
@@ -369,7 +371,7 @@ export async function updateSchedule(request, env) {
       },
     });
   } catch (err) {
-    console.error('Update schedule failed: ', request, err);
+    console.error('Update schedule failed: ', err);
     return createErrorResponse('Update schedule failed: Internal server error', request, 500);
   }
 }
@@ -444,7 +446,7 @@ export async function getSchedule(request, env) {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Get schedule failed: ', request, err);
+    console.error('Get schedule failed: ', err);
     return createErrorResponse('Get schedule failed: Internal server error', request, 500);
   }
 }
@@ -582,7 +584,7 @@ export async function schedulePage(request, env) {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Schedule page failed: ', request, err);
+    console.error('Schedule page failed: ', err);
     return createErrorResponse('Schedule page failed: Internal server error', request, 500);
   }
 }
@@ -680,7 +682,7 @@ export async function deletePageSchedule(request, env) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Delete page schedule failed: ', request, err);
+    console.error('Delete page schedule failed: ', err);
     return createErrorResponse('Delete page schedule failed: Internal server error', request, 500);
   }
 }
@@ -767,7 +769,7 @@ export async function deleteSnapshotSchedule(request, env) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Delete snapshot schedule failed: ', request, err);
+    console.error('Delete snapshot schedule failed: ', err);
     return createErrorResponse('Delete snapshot schedule failed: Internal server error', request, 500);
   }
 }
