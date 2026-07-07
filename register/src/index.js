@@ -504,16 +504,15 @@ export async function schedulePage(request, env) {
     let resolvedUserId;
 
     if (authToken) {
-      // DA mode — preserve existing behavior
-      const { userId } = data;
-      if (!userId) {
-        return createErrorResponse('Invalid body. Please provide userId', request, 400);
-      }
+      // DA mode — use a body-supplied userId when present, otherwise derive the
+      // identity from the token (parity with the delete handlers, so agentic MCP
+      // callers that never pass a userId still work).
       const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
       if (!canPublish) {
         return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
       }
-      resolvedUserId = userId;
+      const { userId } = data;
+      resolvedUserId = userId || await resolveDaUserId({ authToken, org, site });
     } else {
       // Sidekick mode — log-readback proof
       const { nonce } = data;

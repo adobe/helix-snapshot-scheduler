@@ -597,6 +597,64 @@ describe('URL Format Route Tests', () => {
     global.fetch = originalFetch;
   });
 
+  it('should resolve userId from the token profile when omitted from the body (agentic MCP path)', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    const routeFetch = mockFetchForUrlRouteTests();
+    global.fetch = async (url, opts) => {
+      if (url.includes('admin.hlx.page/profile/')) {
+        return { ok: true, json: async () => ({ profile: { email: 'resolved@example.com' } }) };
+      }
+      return routeFetch(url, opts);
+    };
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    // No userId in the body — it must be derived from the forwarded token.
+    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
+      path: '/my-page',
+      scheduledPublish: validFutureDate,
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+    const storedSchedule = getStoredSchedule();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.path, '/my-page');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['/my-page'].userId, 'resolved@example.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should still schedule (attribution is best-effort) when no body userId is provided and the token profile cannot be resolved', async () => {
+    const { default: worker } = await import('../src/index.js');
+    const originalFetch = global.fetch;
+    // Base route mock has no /profile/ branch, so the profile lookup 404s and
+    // resolveDaUserId returns null. The token already passed the publish-permission
+    // check, so scheduling proceeds with a null userId (attribution is best-effort).
+    global.fetch = mockFetchForUrlRouteTests();
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const { env, getStoredSchedule } = createRouteTestEnv();
+    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
+      path: '/my-page',
+      scheduledPublish: validFutureDate,
+    });
+
+    const response = await worker.fetch(request, env, {});
+    const responseData = await response.json();
+    const storedSchedule = getStoredSchedule();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(responseData.path, '/my-page');
+    assert(storedSchedule, 'Schedule should be stored');
+    assert.strictEqual(storedSchedule['org1--site1']['/my-page'].userId, null);
+
+    global.fetch = originalFetch;
+  });
+
   it('should reject mismatched org/site between URL and body for register', async () => {
     const { default: worker } = await import('../src/index.js');
     const originalFetch = global.fetch;
