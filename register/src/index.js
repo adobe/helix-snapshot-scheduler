@@ -70,9 +70,19 @@ function createResponse(body, request, options = {}) {
   return new Response(body, { ...options, headers });
 }
 
-// Helper function to create error Response with X-Error header
+// Helper function to create error Response with X-Error header and add console logs
 // Pass request for CORS-enabled endpoints, or null for non-CORS endpoints
 function createErrorResponse(errorMessage, request, statusCode) {
+  const context = request?.method && request?.url
+    ? ` ${request.method} ${new URL(request.url).pathname}`
+    : '';
+  const line = `[error ${statusCode}]${context} ${errorMessage}`;
+  if (statusCode >= 500) {
+    console.error(line);
+  } else {
+    console.warn(line);
+  }
+
   const headers = {
     'X-Error': errorMessage,
     ...(request ? getCorsHeaders(request) : {}),
@@ -231,7 +241,7 @@ export async function registerRequest(request, env) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Register Request failed: ', request, err);
+    console.error('Register Request failed: ', err);
     return createErrorResponse('Register Request failed: Internal server error', request, 500);
   }
 }
@@ -361,7 +371,7 @@ export async function updateSchedule(request, env) {
       },
     });
   } catch (err) {
-    console.error('Update schedule failed: ', request, err);
+    console.error('Update schedule failed: ', err);
     return createErrorResponse('Update schedule failed: Internal server error', request, 500);
   }
 }
@@ -436,7 +446,7 @@ export async function getSchedule(request, env) {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Get schedule failed: ', request, err);
+    console.error('Get schedule failed: ', err);
     return createErrorResponse('Get schedule failed: Internal server error', request, 500);
   }
 }
@@ -504,16 +514,15 @@ export async function schedulePage(request, env) {
     let resolvedUserId;
 
     if (authToken) {
-      // DA mode — preserve existing behavior
-      const { userId } = data;
-      if (!userId) {
-        return createErrorResponse('Invalid body. Please provide userId', request, 400);
-      }
+      // DA mode — use a body-supplied userId when present, otherwise derive the
+      // identity from the token (parity with the delete handlers, so agentic MCP
+      // callers that never pass a userId still work).
       const canPublish = await hasPublishPermission(authToken, org, site, normalizedPath);
       if (!canPublish) {
         return createErrorResponse('Forbidden: you do not have publish permission for this page', request, 403);
       }
-      resolvedUserId = userId;
+      const { userId } = data;
+      resolvedUserId = userId || await resolveDaUserId({ authToken, org, site });
     } else {
       // Sidekick mode — log-readback proof
       const { nonce } = data;
@@ -575,7 +584,7 @@ export async function schedulePage(request, env) {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Schedule page failed: ', request, err);
+    console.error('Schedule page failed: ', err);
     return createErrorResponse('Schedule page failed: Internal server error', request, 500);
   }
 }
@@ -673,7 +682,7 @@ export async function deletePageSchedule(request, env) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Delete page schedule failed: ', request, err);
+    console.error('Delete page schedule failed: ', err);
     return createErrorResponse('Delete page schedule failed: Internal server error', request, 500);
   }
 }
@@ -760,7 +769,7 @@ export async function deleteSnapshotSchedule(request, env) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Delete snapshot schedule failed: ', request, err);
+    console.error('Delete snapshot schedule failed: ', err);
     return createErrorResponse('Delete snapshot schedule failed: Internal server error', request, 500);
   }
 }
