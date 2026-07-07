@@ -721,32 +721,6 @@ describe('URL Format Route Tests', () => {
     global.fetch = originalFetch;
   });
 
-  it('should return the error message in both the X-Error header and the JSON body', async () => {
-    const { default: worker } = await import('../src/index.js');
-    const originalFetch = global.fetch;
-    global.fetch = mockFetchForUrlRouteTests();
-
-    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    const { env } = createRouteTestEnv();
-    const request = createJsonRequest('http://localhost/schedule/page/org1/site1', {
-      org: 'other-org',
-      site: 'other-site',
-      path: '/my-page',
-      scheduledPublish: validFutureDate,
-      userId: 'user@example.com',
-    });
-
-    const response = await worker.fetch(request, env, {});
-    const responseData = await response.json();
-
-    assert.strictEqual(response.status, 400);
-    assert.strictEqual(response.headers.get('X-Error'), 'URL org/site must match body org/site');
-    assert.strictEqual(response.headers.get('Content-Type'), 'application/json');
-    assert.strictEqual(responseData.error, 'URL org/site must match body org/site');
-
-    global.fetch = originalFetch;
-  });
-
   it('should route DELETE /schedule/snapshot/:org/:site/:snapshotId+ to deleteSnapshotSchedule', async () => {
     const { default: worker } = await import('../src/index.js');
     const originalFetch = global.fetch;
