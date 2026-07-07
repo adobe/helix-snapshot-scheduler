@@ -70,9 +70,17 @@ function createResponse(body, request, options = {}) {
   return new Response(body, { ...options, headers });
 }
 
-// Helper function to create error Response with X-Error header
+// Helper function to create error Response with X-Error header and add console logs
 // Pass request for CORS-enabled endpoints, or null for non-CORS endpoints
 function createErrorResponse(errorMessage, request, statusCode) {
+  const context = request?.method && request?.url ? ` ${request.method} ${request.url}` : '';
+  const line = `[error ${statusCode}]${context} ${errorMessage}`;
+  if (statusCode >= 500) {
+    console.error(line);
+  } else {
+    console.warn(line);
+  }
+
   const headers = {
     'X-Error': errorMessage,
     ...(request ? getCorsHeaders(request) : {}),
