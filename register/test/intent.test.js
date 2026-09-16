@@ -78,7 +78,7 @@ describe('verifyScheduleIntent', () => {
     assert.equal(result.user, 'amol@adobe.com');
   });
 
-  it('returns 401 schedule intent not found when nonce missing from log', async () => {
+  it('returns retryable 425 when the intent has not propagated within the deadline', async () => {
     mockAdminLog([]);
     const env = makeEnv();
     const result = await verifyScheduleIntent({
@@ -91,10 +91,11 @@ describe('verifyScheduleIntent', () => {
       expected: { path: '/foo' },
       window: 5 * 60 * 1000,
       singleUse: true,
+      readbackDeadlineMs: 0, // don't sleep in tests; one poll then give up
     });
     assert.equal(result.ok, false);
-    assert.equal(result.status, 401);
-    assert.match(result.error, /schedule intent not found/);
+    assert.equal(result.status, 425);
+    assert.match(result.error, /not yet visible/);
   });
 
   it('returns 401 schedule intent has expired when entry timestamp is outside window', async () => {
@@ -242,13 +243,14 @@ describe('verifyScheduleIntent', () => {
     assert.equal(env.kv['nonce--n-reusable'], undefined);
   });
 
-  it('retries log readback once after 500ms when nonce not found on first attempt', async () => {
+  it('keeps polling the log readback until the intent appears', async () => {
     let calls = 0;
     global.fetch = async (url, opts = {}) => {
       if (url.startsWith('https://admin.hlx.page/log/')) {
         assert.equal(opts.headers?.['x-auth-token'], 'test-api-key');
         calls += 1;
-        if (calls === 1) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
+        // empty on the first two polls, then the intent shows up
+        if (calls < 3) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
         return {
           ok: true,
           status: 200,
@@ -276,9 +278,112 @@ describe('verifyScheduleIntent', () => {
       expected: { path: '/foo' },
       window: 5 * 60 * 1000,
       singleUse: true,
+      initialBackoffMs: 1, // keep the test fast
+    });
+    assert.equal(result.ok, true);
+    assert.equal(calls, 3);
+  });
+
+  it('treats a 429 as throttling and retries rather than failing', async () => {
+    let calls = 0;
+    global.fetch = async (url) => {
+      if (url.startsWith('https://admin.hlx.page/log/')) {
+        calls += 1;
+        if (calls === 1) {
+          return { ok: false, status: 429, headers: { get: () => null } };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            entries: [{
+              route: 'schedule-page-intent',
+              nonce: 'n-throttled',
+              path: '/foo',
+              user: 'a@b.com',
+              timestamp: Date.now(),
+            }],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-throttled',
+      route: 'schedule-page-intent',
+      expected: { path: '/foo' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+      initialBackoffMs: 1,
     });
     assert.equal(result.ok, true);
     assert.equal(calls, 2);
+  });
+
+  it('parses a Retry-After header on a 429 and retries', async () => {
+    let calls = 0;
+    global.fetch = async (url) => {
+      if (url.startsWith('https://admin.hlx.page/log/')) {
+        calls += 1;
+        if (calls === 1) {
+          return { ok: false, status: 429, headers: { get: (h) => (h === 'retry-after' ? '0' : null) } };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            entries: [{
+              route: 'view-schedule-intent', nonce: 'n-ra', user: 'a@b.com', timestamp: Date.now(),
+            }],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-ra',
+      route: 'view-schedule-intent',
+      expected: {},
+      window: 30 * 60 * 1000,
+      singleUse: false,
+      initialBackoffMs: 1,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+  });
+
+  it('returns 503 when the admin log read fails (non-429)', async () => {
+    global.fetch = async (url) => {
+      if (url.startsWith('https://admin.hlx.page/log/')) {
+        return { ok: false, status: 500 };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+    const env = makeEnv();
+    const result = await verifyScheduleIntent({
+      env,
+      org: 'o',
+      site: 's',
+      apiKey: env.apiKey,
+      nonce: 'n-err',
+      route: 'schedule-page-intent',
+      expected: { path: '/foo' },
+      window: 5 * 60 * 1000,
+      singleUse: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 503);
+    assert.match(result.error, /could not verify/);
   });
 });
 

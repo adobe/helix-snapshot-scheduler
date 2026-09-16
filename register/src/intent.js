@@ -13,6 +13,16 @@
 
 const ADMIN = 'https://admin.hlx.page';
 
+// Readback tuning. Admin's audit log is written asynchronously (helix-admin
+// enqueues to SQS; helix-audit-logger appends to S3), so a just-written intent
+// takes ~1-3s — up to ~30s under FIFO per-org/site backlog — to become
+// queryable. Poll with capped exponential backoff (front-loading the common
+// case) up to a bounded deadline, staying well under admin's 10 req/s limit.
+const READBACK_DEADLINE_MS = 10000;
+const READBACK_INITIAL_BACKOFF_MS = 500;
+const READBACK_MAX_BACKOFF_MS = 4000;
+const READBACK_MAX_ATTEMPTS = 20; // defensive cap; the real bound is the deadline
+
 /**
  * Convert a millisecond duration into the short-notation timespan string that
  * helix-admin's `parseTimespan()` accepts on the log `since` query param
@@ -35,6 +45,20 @@ function msToTimespan(ms) {
   return `${Math.max(1, Math.ceil(ms / 1000))}s`;
 }
 
+/**
+ * Parse a `Retry-After` header (delta-seconds or an HTTP-date) into milliseconds.
+ * Returns null when the header is absent or unparseable.
+ */
+function parseRetryAfterMs(resp) {
+  const value = resp.headers.get('retry-after');
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const when = Date.parse(value);
+  if (!Number.isNaN(when)) return Math.max(0, when - Date.now());
+  return null;
+}
+
 async function fetchLogEntries({
   org, site, apiKey, sinceMs,
 }) {
@@ -43,6 +67,9 @@ async function fetchLogEntries({
     method: 'GET',
     headers: { 'x-auth-token': apiKey, Accept: 'application/json' },
   });
+  if (resp.status === 429) {
+    return { throttled: true, retryAfterMs: parseRetryAfterMs(resp) };
+  }
   if (!resp.ok) {
     return { error: `admin log GET failed: ${resp.status}` };
   }
@@ -61,6 +88,8 @@ function findIntent(entries, { route, nonce }) {
 export async function verifyScheduleIntent({
   env, org, site, apiKey, nonce, route,
   expected, window, singleUse,
+  readbackDeadlineMs = READBACK_DEADLINE_MS,
+  initialBackoffMs = READBACK_INITIAL_BACKOFF_MS,
 }) {
   if (!nonce) return { ok: false, status: 401, error: 'missing nonce or authorization' };
   if (!apiKey) return { ok: false, status: 503, error: 'scheduler not properly registered, contact your admin' };
@@ -76,25 +105,39 @@ export async function verifyScheduleIntent({
     }
   }
 
-  // Log readback — one retry after 500ms to absorb admin log propagation lag
-  let entries = [];
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  // Log readback with capped exponential backoff. The audit log is written
+  // asynchronously, so poll until the intent appears or we hit the deadline,
+  // returning as soon as it is found. A 429 is retried (not failed), honoring
+  // Retry-After when provided.
+  let entry = null;
+  let backoffMs = initialBackoffMs;
+  const startedAt = Date.now();
+  for (let attempt = 0; attempt < READBACK_MAX_ATTEMPTS; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop
     const r = await fetchLogEntries({
       org, site, apiKey, sinceMs: window,
     });
     if (r.error) return { ok: false, status: 503, error: 'could not verify schedule intent' };
-    entries = r.entries;
-    if (findIntent(entries, { route, nonce })) break;
-    if (attempt === 0) {
-      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    if (!r.throttled) {
+      entry = findIntent(r.entries, { route, nonce });
+      if (entry) break;
     }
+    const remainingMs = readbackDeadlineMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) break;
+    const waitMs = Math.min(
+      r.throttled && r.retryAfterMs > 0 ? r.retryAfterMs : backoffMs,
+      remainingMs,
+    );
+    // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    if (!r.throttled) backoffMs = Math.min(backoffMs * 2, READBACK_MAX_BACKOFF_MS);
   }
 
-  const entry = findIntent(entries, { route, nonce });
   if (!entry) {
-    return { ok: false, status: 401, error: 'schedule intent not found in audit log' };
+    // The intent may simply not have propagated to the audit log yet (async
+    // pipeline). Return a retryable "not yet visible" signal rather than an auth
+    // failure so the client can retry with the same nonce.
+    return { ok: false, status: 425, error: 'schedule intent not yet visible, retry' };
   }
 
   // Freshness window
