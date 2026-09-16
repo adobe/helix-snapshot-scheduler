@@ -1,3 +1,11 @@
+## [1.6.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.6.1...v1.6.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* tolerate async audit-log propagation in schedule intent verification ([bfbde25](https://github.com/adobe/helix-snapshot-scheduler/commit/bfbde25425df6f9237990abea1a559c0954a3d40))
+* tolerate async audit-log propagation in schedule intent verification ([9258c12](https://github.com/adobe/helix-snapshot-scheduler/commit/9258c12e66b70aaae732eeb4b21fbe0d3ed8b547))
+
 ## [1.6.1](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.6.0...v1.6.1) (2026-07-07)
 
 
