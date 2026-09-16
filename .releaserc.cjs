@@ -28,10 +28,6 @@ module.exports = {
       // Deploy all workers atomically after release
       publishCmd: 'cd publish && npm run deploy && cd ../cron && npm run deploy && cd ../register && npm run deploy && cd ../dlq && npm run deploy'
     }],
-    ['@adobe/semantic-release-coralogix', {
-      iconUrl: 'https://www.aem.live/media_13916754ab1f54a7a0b88dcb62cf6902d58148b1c.png',
-      applications: ['helix-snapshot-scheduler']
-    }],
     '@semantic-release/github',
     [
       "semantic-release-slack-bot",

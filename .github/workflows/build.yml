@@ -9,6 +9,9 @@ jobs:
     name: Test, Deploy to CI environment and test Post-Deployment
     runs-on: ubuntu-latest
     strategy:
+      # Deploy workers one at a time — parallel wrangler deploys tripped
+      # Cloudflare's API rate limit (error 10429).
+      max-parallel: 1
       matrix:
         worker: [publish, cron, register, dlq]
 
