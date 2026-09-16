@@ -3,15 +3,14 @@ on:
   pull_request:
     types: [ opened, synchronize, reopened, edited ]
 
+permissions:
+  pull-requests: read
+
 jobs:
   semver:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        worker: [publish, cron, register, dlq]
     steps:
-      - uses: actions/checkout@v4
-      - name: Check conventional commits for ${{ matrix.worker }}
+      - name: Check conventional commit PR title
         uses: amannn/action-semantic-pull-request@v5
         with:
           types: |
@@ -26,7 +25,11 @@ jobs:
             ci
             chore
             revert
+          # Optional scope; when present it must name one of the workers.
           scopes: |
-            ${{ matrix.worker }}
+            publish
+            cron
+            register
+            dlq
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

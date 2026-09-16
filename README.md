@@ -235,7 +235,7 @@ Each component is deployed as a separate Cloudflare Worker automatically via Git
   - Creates a new version and updates the CHANGELOG
   - Deploys all 4 workers atomically to production using `wrangler.toml` configs
   - Tags the release in GitHub
-  - Sends notifications to Coralogix and Slack
+  - Sends notifications to Slack
 
 **Worker Components:**
 - `register/` - HTTP endpoint for registration and schedule management
