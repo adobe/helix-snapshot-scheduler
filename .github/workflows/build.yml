@@ -43,7 +43,7 @@ jobs:
     
     # Upload coverage if tests exist
     - name: Upload coverage to Codecov for ${{ matrix.worker }}
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ${{ matrix.worker }}/coverage/lcov.info
