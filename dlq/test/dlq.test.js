@@ -384,4 +384,47 @@ describe('DLQ Consumer Tests', () => {
     assert(failedFileKey, 'Failed message should be stored');
     assert(failedFileKey.startsWith('failed/'), 'Should be stored in failed/ folder');
   });
+  it('should post a failed entry to the site audit log and survive audit-log errors', async () => {
+    const originalFetch = global.fetch;
+    const posted = [];
+    global.fetch = async (url, opts) => {
+      posted.push({ url, headers: opts.headers, entry: JSON.parse(opts.body).entries[0] });
+      if (url.includes('org2')) throw new Error('log down');
+      return { ok: true, status: 201 };
+    };
+    mockEnv.SCHEDULER_KV = { get: async (key) => `key-for-${key}` };
+
+    try {
+      const { default: worker } = await import('../src/index.js');
+      await worker.queue({
+        messages: [
+          {
+            id: 'm1',
+            body: {
+              org: 'org1', site: 'site1', path: '/page', type: 'page', scheduledPublish: 'x', userId: 'u@x.com',
+            },
+          },
+          { id: 'm2', body: { org: 'org2', site: 'site2', path: 'snapshot2' } },
+        ],
+      }, mockEnv);
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    assert.strictEqual(posted.length, 2);
+    assert.strictEqual(posted[0].url, 'https://admin.hlx.page/log/org1/site1/main');
+    assert.strictEqual(posted[0].headers['x-auth-token'], 'key-for-org1--site1--apiKey');
+    assert.deepStrictEqual(posted[0].entry, {
+      route: 'scheduled-publish',
+      status: 'failed',
+      type: 'page',
+      path: '/page',
+      scheduledPublish: 'x',
+      adminStatus: null,
+      attempts: null,
+      userId: 'u@x.com',
+    });
+    assert.strictEqual(posted[1].entry.snapshotId, 'snapshot2');
+    assert.strictEqual(scheduleData['org2--site2'], undefined);
+  });
 });

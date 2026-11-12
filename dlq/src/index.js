@@ -10,51 +10,9 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable no-console */
-/* eslint-disable no-await-in-loop */
 
-/**
- * Batch update scheduled.json to remove multiple failed snapshots
- * @param {Object} env - The environment object
- * @param {Array} snapshots - Array of {org, site, snapshotId}
- * @returns {Promise<void>}
- */
-async function batchRemoveFromScheduledJson(env, snapshots) {
-  try {
-    // Read current schedule data
-    const scheduleData = await env.R2_BUCKET.get('schedule.json');
-    if (!scheduleData) {
-      console.log('No schedule data found');
-      return;
-    }
-
-    const schedule = await scheduleData.json();
-
-    // Remove all failed entries from schedule
-    for (const snapshot of snapshots) {
-      const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
-
-      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.path]) {
-        delete schedule[orgSiteKey][snapshot.path];
-
-        // If no more entries for this org-site, remove the entire entry
-        if (Object.keys(schedule[orgSiteKey]).length === 0) {
-          delete schedule[orgSiteKey];
-        }
-
-        console.log(`Removed failed entry ${snapshot.path} from schedule.json for ${orgSiteKey}`);
-      } else {
-        console.warn(`Entry ${snapshot.path} not found in schedule.json for ${orgSiteKey}`);
-      }
-    }
-
-    // Write updated schedule back to R2
-    await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
-    console.log(`Removed ${snapshots.length} failed snapshots from schedule.json`);
-  } catch (err) {
-    console.error('Failed to batch update schedule.json:', err.message);
-    // Don't throw - we don't want DLQ messages to fail and retry
-  }
-}
+import { logScheduledPublish } from '../../shared/admin.js';
+import { appendToDailyFile, removeFromSchedule } from '../../shared/schedule-store.js';
 
 /**
  * Dead Letter Queue (DLQ) Consumer
@@ -105,48 +63,31 @@ export default {
       });
     }
 
-    // Batch store all failed messages in single R2 write
     if (failedMessages.length > 0) {
       try {
-        const today = new Date().toISOString().split('T')[0];
-        const failedFileName = `failed/${today}.json`;
-
-        // Read existing failed messages for today
-        let existingFailed = [];
-        try {
-          const existing = await env.R2_BUCKET.get(failedFileName);
-          if (existing) {
-            existingFailed = await existing.json();
-          }
-        } catch (err) {
-          console.log('No existing failed messages for today, starting fresh');
-        }
-
-        // Add all new failed messages with metadata
         const failedAt = new Date().toISOString();
-        for (const msg of failedMessages) {
-          existingFailed.push({
-            ...msg,
-            failedAt,
-            reason: 'exceeded-max-retries',
-          });
-        }
-
-        // Single write operation for all failed messages
-        await env.R2_BUCKET.put(failedFileName, JSON.stringify(existingFailed, null, 2));
-        console.log(`Stored ${failedMessages.length} failed messages in ${failedFileName}`);
+        await appendToDailyFile(env, 'failed', failedMessages.map((msg) => ({
+          ...msg,
+          failedAt,
+          reason: 'exceeded-max-retries',
+        })));
+        console.log(`Stored ${failedMessages.length} failed messages in failed/`);
       } catch (err) {
         console.error('Failed to store DLQ messages in R2:', err);
         // Don't throw - we don't want DLQ messages to fail and retry
       }
 
-      // Remove failed snapshots from schedule.json
       try {
-        await batchRemoveFromScheduledJson(env, failedMessages);
+        await removeFromSchedule(env, failedMessages);
+        console.log(`Removed ${failedMessages.length} failed snapshots from schedule.json`);
       } catch (err) {
         console.error('Failed to remove failed snapshots from schedule.json:', err);
         // Don't throw - we don't want DLQ messages to fail and retry
       }
+
+      await Promise.all(failedMessages.map((m) => logScheduledPublish(env, m, {
+        status: 'failed',
+      })));
     }
     console.log(`DLQ Consumer processed ${batch.messages.length} failed messages`);
   },

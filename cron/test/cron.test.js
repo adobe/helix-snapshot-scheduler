@@ -356,4 +356,85 @@ describe('Cron Service Tests', () => {
       }
     });
   });
+  describe('queuedAt tracking', () => {
+    let schedule;
+    let writes;
+    let originalDateNow;
+
+    beforeEach(() => {
+      originalDateNow = Date.now;
+      Date.now = () => new Date('2025-01-01T10:00:00Z').getTime();
+      writes = [];
+      schedule = {
+        'org1--site1': {
+          fresh: { scheduledPublish: '2025-01-01T10:01:00Z' },
+          recent: { scheduledPublish: '2025-01-01T09:40:00Z', queuedAt: '2025-01-01T09:45:00Z' },
+          stuck: { scheduledPublish: '2025-01-01T09:00:00Z', queuedAt: '2025-01-01T09:25:00Z' },
+          later: { scheduledPublish: '2025-01-01T12:00:00Z' },
+        },
+      };
+      mockEnv.R2_BUCKET = {
+        get: async (key) => (key === 'schedule.json'
+          ? { json: async () => JSON.parse(JSON.stringify(schedule)) }
+          : null),
+        put: async (key, data) => {
+          writes.push({ key, data: JSON.parse(data) });
+          return true;
+        },
+      };
+    });
+
+    afterEach(() => {
+      Date.now = originalDateNow;
+    });
+
+    it('sets queuedAt on queued entries, skips recent ones and re-queues stuck ones', async () => {
+      const { default: worker } = await import('../src/index.js');
+      await worker.scheduled({}, mockEnv);
+
+      const queuedPaths = queuedMessages.map((m) => m.message.path).sort();
+      assert.deepStrictEqual(queuedPaths, ['fresh', 'stuck']);
+      assert.strictEqual(writes.length, 1, 'one schedule.json write per run');
+      assert.strictEqual(writes[0].key, 'schedule.json');
+      const entries = writes[0].data['org1--site1'];
+      assert.strictEqual(entries.fresh.queuedAt, '2025-01-01T10:00:00.000Z');
+      assert.strictEqual(entries.stuck.queuedAt, '2025-01-01T10:00:00.000Z');
+      assert.strictEqual(entries.recent.queuedAt, '2025-01-01T09:45:00Z');
+      assert.strictEqual(entries.later.queuedAt, undefined);
+    });
+
+    it('does not write schedule.json when nothing was queued', async () => {
+      delete schedule['org1--site1'].fresh;
+      delete schedule['org1--site1'].stuck;
+      const { default: worker } = await import('../src/index.js');
+      await worker.scheduled({}, mockEnv);
+
+      assert.strictEqual(queuedMessages.length, 0);
+      assert.strictEqual(writes.length, 0);
+    });
+
+    it('does not mark entries whose queue send failed', async () => {
+      mockEnv.PUBLISH_QUEUE.send = async (message) => {
+        if (message.path === 'stuck') throw new Error('queue down');
+      };
+      const { default: worker } = await import('../src/index.js');
+      await worker.scheduled({}, mockEnv);
+
+      const entries = writes[0].data['org1--site1'];
+      assert.strictEqual(entries.fresh.queuedAt, '2025-01-01T10:00:00.000Z');
+      assert.strictEqual(entries.stuck.queuedAt, '2025-01-01T09:25:00Z');
+    });
+
+    it('does not mark an entry that was rescheduled while queuing', async () => {
+      const { default: worker } = await import('../src/index.js');
+      mockEnv.PUBLISH_QUEUE.send = async () => {
+        schedule['org1--site1'].fresh = { scheduledPublish: '2025-01-02T10:00:00Z' };
+      };
+      await worker.scheduled({}, mockEnv);
+
+      const entries = writes[0].data['org1--site1'];
+      assert.strictEqual(entries.fresh.scheduledPublish, '2025-01-02T10:00:00Z');
+      assert.strictEqual(entries.fresh.queuedAt, undefined);
+    });
+  });
 });
