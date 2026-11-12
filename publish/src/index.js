@@ -14,24 +14,27 @@
 /* eslint-disable quote-props */
 /* eslint-disable comma-dangle */
 
-const ADMIN_API_BASE = 'https://admin.hlx.page';
+import {
+  ADMIN_API_BASE, getApiKey, readApiKey, logScheduledPublish,
+} from '../../shared/admin.js';
+import { appendToDailyFile, removeFromSchedule } from '../../shared/schedule-store.js';
+
+export { getApiKey };
+
 const MAIN_BRANCH = 'main';
 
-export async function getApiKey(env, org, site) {
-  try {
-    if (!env || !env.SCHEDULER_KV) {
-      throw new Error('KV binding is missing in the environment.');
-    }
-    const kvConfigKey = `${org}--${site}--apiKey`;
-    const apiKey = await env.SCHEDULER_KV.get(kvConfigKey);
-    if (!apiKey) {
-      return null;
-    }
-    return apiKey;
-  } catch (err) {
-    console.error('Error getting API key from KV: ', org, site, err);
-    return null;
-  }
+// Admin responses that will not succeed on retry (bad request, auth, missing snapshot/page).
+const PERMANENT_STATUSES = new Set([400, 401, 403, 404]);
+const RETRY_BASE_DELAY_SECONDS = 30;
+const RETRY_MAX_DELAY_SECONDS = 600;
+
+export function isPermanentFailure({ status, notRegistered }) {
+  return !!notRegistered || PERMANENT_STATUSES.has(status);
+}
+
+export function retryDelaySeconds(attempts = 1) {
+  const exp = Math.max(0, attempts - 1);
+  return Math.min(RETRY_BASE_DELAY_SECONDS * 2 ** exp, RETRY_MAX_DELAY_SECONDS);
 }
 
 /**
@@ -41,58 +44,41 @@ export async function getApiKey(env, org, site) {
  * @param {string} site - The site
  * @param {string} snapshotId - The snapshot ID
  * @param {boolean} approved - Whether the snapshot is approved & published by the user
- * @returns {Promise<boolean>} - Success status
+ * @returns {Promise<{ok: boolean, status: number|null, notRegistered?: boolean}>}
  */
 async function publishSnapshot(env, org, site, snapshotId, approved) {
   try {
-    const apiKey = await getApiKey(env, org, site);
+    const apiKey = await readApiKey(env, org, site);
     if (!apiKey) {
       console.log('Publish Snapshot Worker: No API token found');
-      throw new Error('Org/Site not registered');
+      return { ok: false, status: null, notRegistered: true };
     }
-    let res;
-    if (approved) {
-      console.log('Publish Snapshot Worker: approving snapshot', org, site, snapshotId);
-      res = await fetch(
-        `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?review=approve&keepResources=true`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `token ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            'review': 'approve',
-            'keepResources': 'true'
-          }),
-        },
-      );
-    } else {
-      console.log('Publish Snapshot Worker: publishing snapshot', org, site, snapshotId);
-      res = await fetch(
-        `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `token ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            'publish': 'true'
-          }),
-        },
-      );
-    }
+    // forceUpdate: publish even when the live copy is newer than the snapshot copy
+    const url = approved
+      ? `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?review=approve&keepResources=true&forceUpdate=true`
+      : `${ADMIN_API_BASE}/snapshot/${org}/${site}/${MAIN_BRANCH}/${snapshotId}?publish=true&forceUpdate=true`;
+    const body = approved
+      ? { 'review': 'approve', 'keepResources': 'true', 'forceUpdate': 'true' }
+      : { 'publish': 'true', 'forceUpdate': 'true' };
+    console.log(`Publish Snapshot Worker: ${approved ? 'approving' : 'publishing'} snapshot`, org, site, snapshotId);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `token ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
     if (res.status >= 400) {
       console.error('Publish Snapshot Worker: failed to publish snapshot', org, site, snapshotId, res.status, res.statusText);
-      return false;
+      return { ok: false, status: res.status };
     }
     console.log('Publish Snapshot Worker: successfully published snapshot', org, site, snapshotId, res.status, res.statusText);
-    return true;
+    return { ok: true, status: res.status };
   } catch (error) {
     console.error(`Failed to publish snapshot ${snapshotId}:`, error.message);
-    return false;
+    return { ok: false, status: null };
   }
 }
 
@@ -102,14 +88,14 @@ async function publishSnapshot(env, org, site, snapshotId, approved) {
  * @param {string} org - The organization
  * @param {string} site - The site
  * @param {string} path - The page path
- * @returns {Promise<boolean>} - Success status
+ * @returns {Promise<{ok: boolean, status: number|null, notRegistered?: boolean}>}
  */
 async function publishPage(env, org, site, path) {
   try {
-    const apiKey = await getApiKey(env, org, site);
+    const apiKey = await readApiKey(env, org, site);
     if (!apiKey) {
       console.log('Publish Page Worker: No API token found');
-      throw new Error('Org/Site not registered');
+      return { ok: false, status: null, notRegistered: true };
     }
     console.log('Publish Page Worker: publishing page', org, site, path);
     const res = await fetch(`${ADMIN_API_BASE}/live/${org}/${site}/${MAIN_BRANCH}${path}`, {
@@ -118,89 +104,13 @@ async function publishPage(env, org, site, path) {
     });
     if (res.status >= 400) {
       console.error('Publish Page Worker: failed to publish page', org, site, path, res.status, res.statusText);
-      return false;
+      return { ok: false, status: res.status };
     }
     console.log('Publish Page Worker: successfully published page', org, site, path, res.status, res.statusText);
-    return true;
+    return { ok: true, status: res.status };
   } catch (error) {
     console.error(`Failed to publish page ${path}:`, error.message);
-    return false;
-  }
-}
-
-/**
- * Batch move completed snapshots to completed folder (single R2 write operation)
- * @param {Object} env - The environment object
- * @param {Array} snapshots - Array of {org, site, path, scheduledPublish, publishedAt}
- * @returns {Promise<void>}
- */
-async function batchMoveToCompleted(env, snapshots) {
-  const today = new Date().toISOString().split('T')[0];
-  const completedFileName = `completed/${today}.json`;
-
-  // Read existing completed data for today
-  let completedSnapshots = [];
-  try {
-    const existingCompleted = await env.R2_BUCKET.get(completedFileName);
-    if (existingCompleted) {
-      completedSnapshots = await existingCompleted.json();
-    }
-  } catch (err) {
-    console.log('No existing completed data for today, starting fresh');
-  }
-
-  // Add all new completed snapshots with their individual publishedAt times
-  for (const snapshot of snapshots) {
-    completedSnapshots.push({
-      org: snapshot.org,
-      site: snapshot.site,
-      path: snapshot.path,
-      scheduledPublish: snapshot.scheduledPublish,
-      publishedAt: snapshot.publishedAt,
-      publishedBy: snapshot.type === 'page' ? 'scheduled-page-publisher' : 'scheduled-snapshot-publisher',
-    });
-  }
-
-  // Single write operation for all snapshots
-  await env.R2_BUCKET.put(completedFileName, JSON.stringify(completedSnapshots, null, 2));
-}
-
-/**
- * Batch update scheduled.json to remove multiple published snapshots (single R2 read + write)
- * @param {Object} env - The environment object
- * @param {Array} snapshots - Array of {org, site, path}
- * @returns {Promise<void>}
- */
-async function batchUpdateScheduledJson(env, snapshots) {
-  try {
-  // Read current schedule data (single read)
-    const scheduleData = await env.R2_BUCKET.get('schedule.json');
-    if (!scheduleData) {
-      console.log('No schedule data found');
-      throw new Error('Schedule data not found');
-    }
-
-    const schedule = await scheduleData.json();
-
-    // Remove all published entries from schedule
-    for (const snapshot of snapshots) {
-      const orgSiteKey = `${snapshot.org}--${snapshot.site}`;
-
-      if (schedule[orgSiteKey] && schedule[orgSiteKey][snapshot.path]) {
-        delete schedule[orgSiteKey][snapshot.path];
-
-        // If no more entries for this org-site, remove the entire entry
-        if (Object.keys(schedule[orgSiteKey]).length === 0) {
-          delete schedule[orgSiteKey];
-        }
-      } else {
-        console.warn(`Entry ${snapshot.path} not found in scheduled.json for ${orgSiteKey}`);
-      }
-    }
-    await env.R2_BUCKET.put('schedule.json', JSON.stringify(schedule, null, 2));
-  } catch (err) {
-    console.error('Failed to batch update scheduled.json:', err.message);
-    throw err;
+    return { ok: false, status: null };
   }
 }
 
@@ -225,11 +135,11 @@ async function isStillScheduled(env, org, site, path) {
 
 export default {
   async queue(batch, env) {
-    const publishedSnapshots = [];
-    // Step 1: Publish all snapshots/pages in the batch
+    const published = [];
+    const failed = [];
+
     for (const msg of batch.messages) {
-      console.log('Publish Worker: processing message');
-      console.log(`Message retry count: ${msg.attempts || 0}`);
+      const attempts = msg.attempts || 1;
       const {
         org,
         site,
@@ -240,30 +150,24 @@ export default {
       } = msg.body;
       // backward compat: support in-flight messages that still use snapshotId
       const path = msg.body.path ?? msg.body.snapshotId;
+      console.log(`Publish Worker: processing ${type} ${path} for ${org}/${site} (attempt ${attempts})`);
 
       try {
         // Guard: verify the entry hasn't been unscheduled while the message was in-flight
         const stillScheduled = await isStillScheduled(env, org, site, path);
         if (!stillScheduled) {
           console.log(`Skipping ${type} ${path} for ${org}/${site}: entry was unscheduled`);
+          msg.ack();
           // eslint-disable-next-line no-continue
           continue;
         }
 
-        // Publish the snapshot or page
-        const publishSuccess = type === 'page'
+        const result = type === 'page'
           ? await publishPage(env, org, site, path)
           : await publishSnapshot(env, org, site, path, approved);
 
-        if (!publishSuccess) {
-          // Publish failed - throw error to trigger queue retry for entire batch
-          const error = new Error(`Failed to publish ${type} ${path} for ${org}/${site}`);
-          console.error(error.message);
-          throw error;
-        }
-
-        // Track successfully published entry with publish timestamp
-        publishedSnapshots.push({
+        const entry = {
+          msg,
           org,
           site,
           path,
@@ -271,37 +175,106 @@ export default {
           approved,
           type,
           userId,
-          publishedAt: new Date().toISOString(), // Capture exact publish time
-        });
-
-        console.log(`Successfully published ${type} ${path} for ${org}/${site}`);
+          attempts,
+          adminStatus: result.status,
+        };
+        if (result.ok) {
+          published.push({ ...entry, publishedAt: new Date().toISOString() });
+          console.log(`Successfully published ${type} ${path} for ${org}/${site}`);
+        } else if (isPermanentFailure(result)) {
+          console.error(`Permanent failure publishing ${type} ${path} for ${org}/${site} (status ${result.status ?? 'n/a'}), not retrying`);
+          failed.push({
+            ...entry,
+            reason: result.notRegistered ? 'org-site-not-registered' : `admin-${result.status}`,
+          });
+        } else {
+          const delaySeconds = retryDelaySeconds(attempts);
+          console.error(`Transient failure publishing ${type} ${path} for ${org}/${site} (status ${result.status ?? 'n/a'}), retrying in ${delaySeconds}s`);
+          msg.retry({ delaySeconds });
+        }
       } catch (err) {
-        console.error(`Publish Worker failed (attempt ${msg.attempts || 1}):`, org, site, path, err.message);
-        // Re-throw to signal failure and trigger automatic retry by Cloudflare Queues
-        throw err;
+        const delaySeconds = retryDelaySeconds(attempts);
+        console.error(`Publish Worker error (attempt ${attempts}), retrying in ${delaySeconds}s:`, org, site, path, err.message);
+        msg.retry({ delaySeconds });
       }
     }
 
-    // Step 2: Batch update completed snapshots
-    if (publishedSnapshots.length > 0) {
+    let failedRecorded = failed.length === 0;
+    if (failed.length > 0) {
       try {
-        await batchMoveToCompleted(env, publishedSnapshots);
-        console.log(`Moved ${publishedSnapshots.length} snapshots to completed folder`);
+        const failedAt = new Date().toISOString();
+        await appendToDailyFile(env, 'failed', failed.map((f) => ({
+          org: f.org,
+          site: f.site,
+          path: f.path,
+          scheduledPublish: f.scheduledPublish,
+          type: f.type,
+          userId: f.userId,
+          messageId: f.msg.id,
+          timestamp: f.msg.timestamp,
+          adminStatus: f.adminStatus,
+          attempts: f.attempts,
+          failedAt,
+          reason: f.reason,
+        })));
+        failedRecorded = true;
+      } catch (err) {
+        console.error('Failed to store failed entries in R2:', err.message);
+      }
+    }
+
+    // Only remove published entries from schedule.json once they are recorded in completed/,
+    // so a retry still finds them scheduled.
+    let recorded = published.length === 0;
+    if (published.length > 0) {
+      try {
+        await appendToDailyFile(env, 'completed', published.map((p) => ({
+          org: p.org,
+          site: p.site,
+          path: p.path,
+          scheduledPublish: p.scheduledPublish,
+          publishedAt: p.publishedAt,
+          publishedBy: p.type === 'page' ? 'scheduled-page-publisher' : 'scheduled-snapshot-publisher',
+        })));
+        recorded = true;
       } catch (err) {
         console.error('Failed to batch move to completed:', err.message);
-        throw err;
-      }
-
-      // Step 3: Batch update schedule.json
-      try {
-        await batchUpdateScheduledJson(env, publishedSnapshots);
-        console.log(`Updated schedule.json, removed ${publishedSnapshots.length} snapshots`);
-      } catch (err) {
-        console.error('Failed to batch update schedule.json:', err.message);
-        throw err;
       }
     }
 
-    console.log(`Successfully processed ${publishedSnapshots.length} entries`);
+    // Remove entries from schedule.json only once their outcome is durably recorded,
+    // otherwise retry so nothing is lost and cron does not re-queue an acked message.
+    const toRemove = [...(recorded ? published : []), ...(failedRecorded ? failed : [])];
+    if (toRemove.length > 0) {
+      try {
+        await removeFromSchedule(env, toRemove);
+        console.log(`Updated schedule.json, removed ${toRemove.length} entries`);
+      } catch (err) {
+        console.error('Failed to batch update schedule.json:', err.message);
+        recorded = false;
+        failedRecorded = false;
+      }
+    }
+
+    const settle = (items, ok) => items.forEach((item) => {
+      if (ok) {
+        item.msg.ack();
+      } else {
+        item.msg.retry({ delaySeconds: retryDelaySeconds(item.attempts) });
+      }
+    });
+    settle(failed, failedRecorded);
+    settle(published, recorded);
+
+    await Promise.all([
+      ...published.map((p) => logScheduledPublish(env, p, {
+        status: 'published', adminStatus: p.adminStatus, attempts: p.attempts,
+      })),
+      ...failed.map((f) => logScheduledPublish(env, f, {
+        status: 'failed', adminStatus: f.adminStatus, attempts: f.attempts,
+      })),
+    ]);
+
+    console.log(`Processed batch: ${published.length} published, ${failed.length} failed permanently`);
   },
 };

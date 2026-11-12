@@ -25,6 +25,8 @@ module.exports = {
     'import/extensions': ['error', {
       js: 'always',
     }],
+    // ../../shared is bundled into each worker by wrangler
+    'import/no-relative-packages': 'off',
   },
   ignorePatterns: [
     'test/**/*.spec.js',

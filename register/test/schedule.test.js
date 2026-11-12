@@ -236,6 +236,69 @@ describe('Schedule API Tests', () => {
     global.fetch = originalFetch;
   });
 
+  it('should drop queuedAt when an already-queued snapshot is rescheduled', async () => {
+    const { updateSchedule } = await import('../src/index.js');
+
+    const validFutureDate = new Date(Date.now() + 10 * 60 * 1000);
+    let storedSchedule = null;
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url) => {
+      if (url.includes('admin.hlx.page/snapshot')) {
+        return {
+          ok: true,
+          json: async () => ({
+            manifest: { metadata: { scheduledPublish: validFutureDate.toISOString() } },
+          }),
+        };
+      }
+      return { ok: true };
+    };
+
+    const mockEnvWithCapture = {
+      ...mockEnv,
+      R2_BUCKET: {
+        get: async (key) => {
+          if (key === 'schedule.json') {
+            return {
+              json: async () => ({
+                'org1--site1': {
+                  snapshot1: {
+                    type: 'snapshot',
+                    scheduledPublish: '2025-01-01T10:00:00Z',
+                    queuedAt: '2025-01-01T09:55:00Z',
+                  },
+                },
+              }),
+            };
+          }
+          return null;
+        },
+        put: async (key, value) => {
+          if (key === 'schedule.json') storedSchedule = JSON.parse(value);
+          return true;
+        },
+      },
+    };
+
+    const request = {
+      json: async () => ({ org: 'org1', site: 'site1', snapshotId: 'snapshot1' }),
+      headers: {
+        get: (name) => (name === 'Authorization' ? 'token test-token' : null),
+      },
+    };
+
+    try {
+      const response = await updateSchedule(request, mockEnvWithCapture);
+      assert.strictEqual(response.status, 200);
+      const entry = storedSchedule['org1--site1'].snapshot1;
+      assert.strictEqual(entry.scheduledPublish, validFutureDate.toISOString());
+      assert.strictEqual(entry.queuedAt, undefined);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('should not include userId in schedule.json when omitted', async () => {
     const { updateSchedule } = await import('../src/index.js');
 

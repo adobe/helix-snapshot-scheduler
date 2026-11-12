@@ -7,10 +7,13 @@ compatibility_date = "2023-05-05"
 [[queues.consumers]]
 queue = "helix-snapshot-scheduler-publish-ci"
 max_retries = 5
+max_batch_size = 5
+retry_delay = 60
 max_wait_time_ms = 3600000
 dead_letter_queue = "helix-snapshot-scheduler-dlq-ci"
-# Retry strategy: 5 retries with exponential backoff (max 1 hour total wait)
-# This handles transient failures (R2 outages, API rate limits, network issues)
+# Retry strategy: each message is acked or retried on its own. Transient failures
+# (5xx, 429, network) retry with exponential backoff; permanent ones (400/401/403/404)
+# are recorded in failed/ without retry.
 # After max retries, failed messages are sent to DLQ for investigation
 
 [[queues.producers]]
