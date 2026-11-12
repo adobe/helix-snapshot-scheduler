@@ -1,3 +1,10 @@
+## [1.6.3](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.6.2...v1.6.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* isolate scheduled publish failures per queue message ([bf53676](https://github.com/adobe/helix-snapshot-scheduler/commit/bf536760e1697e52c6a020a2e201514b62621532))
+
 ## [1.6.2](https://github.com/adobe/helix-snapshot-scheduler/compare/v1.6.1...v1.6.2) (2026-09-16)
 
 
